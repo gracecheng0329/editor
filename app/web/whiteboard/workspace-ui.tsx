@@ -9,15 +9,15 @@ import {
   StickyNote, Type, Undo2, Users, X, type LucideIcon,
 } from "lucide-react";
 import {
-  DefaultColorStyle, DefaultSizeStyle, getSnapshot, Tldraw, toRichText, track, useEditor,
-  createShapeId, type TLDocumentSnapshot, type TLShapeId,
+  DefaultColorStyle, DefaultSizeStyle, getSnapshot, Tldraw, track, useEditor,
+  createShapeId, type TLShapeId,
 } from "tldraw";
 import { architectureShapeUtils, NODE_KINDS, type ArchitectureNode, type NodeKind } from "./architecture-shape";
 import { INITIAL_SERVICE_ID } from "./seed";
 
 type Message = { id: string; body: string; author: string; time: string };
 type Thread = { id: string; shapeId?: TLShapeId; x: number; y: number; resolved: boolean; messages: Message[] };
-type Milestone = { id: string; name: string; date: string; document: TLDocumentSnapshot };
+type Milestone = { id: string; name: string; date: string; document: ReturnType<typeof getSnapshot>["document"] };
 type Panel = "comments" | "versions" | null;
 type Modal = "share" | "help" | null;
 
@@ -34,7 +34,7 @@ function useLocalData<T>(key: string, initial: T) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     try { window.localStorage.setItem(key, JSON.stringify(value)); }
-    catch { setFailed(true); }
+    catch { queueMicrotask(() => setFailed(true)); }
   }, [key, value]);
   return [value, setValue, failed] as const;
 }
@@ -74,7 +74,8 @@ export const WorkspaceUi = track(function WorkspaceUi() {
   const [title, setTitle, titleFailed] = useLocalData("archly-local-title-v1", "協作白板 · 系統架構");
   const [threads, setThreads, threadsFailed] = useLocalData<Thread[]>("archly-local-threads-v1", defaultThreads);
   const [milestones, setMilestones, versionsFailed] = useLocalData<Milestone[]>("archly-local-milestones-v1", []);
-  const [library, setLibrary] = useState(true);
+  const [library, setLibrary] = useState(() => window.innerWidth > 780);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [search, setSearch] = useState("");
@@ -110,6 +111,11 @@ export const WorkspaceUi = track(function WorkspaceUi() {
       const target = event.target as HTMLElement | null;
       if (modal || preview || editor.getEditingShapeId() || target?.isContentEditable || target?.closest("input, textarea, select")) return;
       const modifier = event.metaKey || event.ctrlKey;
+      if (modifier && event.key.toLowerCase() === "k") {
+        event.preventDefault(); setLibrary(true);
+        window.requestAnimationFrame(() => searchRef.current?.focus());
+        return;
+      }
       if (modifier && event.key.toLowerCase() === "z") { event.preventDefault(); if (event.shiftKey) editor.redo(); else editor.undo(); return; }
       if (modifier) return;
       const tools: Record<string, string> = { v: "select", h: "hand", p: "draw", e: "eraser", a: "arrow", t: "text", n: "note", r: "geo" };
@@ -143,7 +149,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
       const thread: Thread = { id: crypto.randomUUID(), shapeId: bounds ? selected[0].id : undefined, x: bounds ? bounds.maxX - 14 : center.x, y: bounds ? bounds.y + 14 : center.y, resolved: false, messages: [message] };
       setThreads((current) => [...current, thread]); setActiveThread(thread.id);
     }
-    setDraft(""); setNotice("留言已儲存在此瀏覽器，尚未同步至雲端");
+    setDraft(""); setNotice("已新增本機留言，尚未同步至雲端");
   }
 
   function saveMilestone() {
@@ -154,7 +160,10 @@ export const WorkspaceUi = track(function WorkspaceUi() {
     setNotice("已建立本機里程碑，可唯讀預覽");
   }
 
-  function fitCanvas() { editor.zoomToFit({ animation: { duration: 250 }, inset: 100 }); }
+  function fitCanvas() {
+    const bounds = editor.getCurrentPageBounds();
+    if (bounds) editor.zoomToBounds(bounds, { animation: { duration: 250 }, inset: 100 });
+  }
   const toolbar: { tool: string; label: string; shortcut: string; icon: LucideIcon }[] = [
     { tool: "select", label: "選取", shortcut: "V", icon: MousePointer2 },
     { tool: "hand", label: "平移", shortcut: "H", icon: Hand },
@@ -188,7 +197,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
     <button className={`library-toggle floating-surface ${library ? "hidden-toggle" : ""}`} aria-label="開啟元件庫" onClick={() => setLibrary(true)}><LayoutGrid size={19} /></button>
     {library && <aside className="component-library floating-surface" aria-label="架構元件庫">
       <header className="library-header"><div><span className="eyebrow">BUILD YOUR IDEAS</span><h2>架構元件</h2></div><IconButton icon={ChevronLeft} label="收合元件庫" onClick={() => setLibrary(false)} /></header>
-      <label className="search-field"><Search size={15} /><input aria-label="搜尋元件" placeholder="搜尋元件…" value={search} onChange={(event) => setSearch(event.target.value)} /><kbd>⌘ K</kbd></label>
+      <label className="search-field"><Search size={15} /><input ref={searchRef} aria-label="搜尋元件" placeholder="搜尋元件…" value={search} onChange={(event) => setSearch(event.target.value)} /><kbd>⌘ K</kbd></label>
       <div className="library-tabs"><button className="selected">基礎元件</button><span>點選加入畫布</span></div>
       <div className="component-list">{Object.entries(NODE_KINDS).filter(([key, value]) => `${key} ${value.label} ${value.description}`.toLowerCase().includes(search.toLowerCase())).map(([kind, value]) => <button key={kind} className="component-item" onClick={() => addNode(kind as NodeKind)}><span className={`component-icon node-${value.color}`}><value.icon size={20} strokeWidth={1.7} /></span><span><strong>{value.label}</strong><small>{value.description}</small></span><Plus size={15} className="component-add" /></button>)}
         {Object.entries(NODE_KINDS).every(([key, value]) => !`${key} ${value.label} ${value.description}`.toLowerCase().includes(search.toLowerCase())) && <p className="empty-search">找不到符合的元件</p>}
@@ -213,7 +222,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
       {panel === "comments" ? <>
         <div className="panel-tabs">{[{ id: "open", label: "未解決" }, { id: "resolved", label: "已解決" }, { id: "all", label: "全部" }].map((tab) => <button key={tab.id} className={filter === tab.id ? "selected" : ""} onClick={() => setFilter(tab.id)}>{tab.label}</button>)}</div>
         <div className="thread-list">{visibleThreads.map((thread) => <article key={thread.id} className={`thread-card ${activeThread === thread.id ? "selected" : ""}`}>
-          <button className="thread-anchor" onClick={() => { setActiveThread(thread.id); if (thread.shapeId && editor.getShape(thread.shapeId)) { editor.select(thread.shapeId); editor.zoomToSelection({ animation: { duration: 200 }, inset: 180 }); } }}><Link2 size={12} />{thread.shapeId ? editor.getShape(thread.shapeId) ? "物件留言" : "原物件已移除" : "畫布座標留言"}<ArrowUpRight size={12} /></button>
+          <button className="thread-anchor" onClick={() => { setActiveThread(thread.id); if (thread.shapeId && editor.getShape(thread.shapeId)) { editor.select(thread.shapeId); editor.zoomToSelection({ animation: { duration: 200 } }); } }}><Link2 size={12} />{thread.shapeId ? editor.getShape(thread.shapeId) ? "物件留言" : "原物件已移除" : "畫布座標留言"}<ArrowUpRight size={12} /></button>
           {thread.messages.map((message) => <div className="comment-message" key={message.id}><span className={`message-avatar ${message.author === "你" ? "own" : ""}`}>{message.author === "你" ? "你" : "a"}</span><div><div className="message-meta"><strong>{message.author}</strong><time>{message.time === "示範留言" ? message.time : new Date(message.time).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}</time></div><p>{message.body}</p></div></div>)}
           <div className="thread-actions"><button onClick={() => setActiveThread(thread.id)}><MessageCircle size={13} />回覆</button><button onClick={() => setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, resolved: !item.resolved } : item))}><Check size={14} />{thread.resolved ? "重新開啟" : "標記已解決"}</button></div>
         </article>)}{visibleThreads.length === 0 && <div className="panel-empty"><MessageCircle size={28} /><h3>{filter === "resolved" ? "還沒有已解決的討論" : "讓討論從這裡開始"}</h3><p>選取物件或直接留言，記錄你的想法。</p></div>}</div>
@@ -232,13 +241,13 @@ export const WorkspaceUi = track(function WorkspaceUi() {
     </div>
     {(currentTool === "draw" || currentTool === "arrow" || currentTool === "geo") && <div className="style-popover floating-surface" aria-label="筆畫樣式"><span>顏色</span>{([{ value: "black", css: "#33323b" }, { value: "violet", css: "#8652e8" }, { value: "blue", css: "#477dec" }, { value: "green", css: "#4c9e77" }, { value: "red", css: "#e37879" }] as const).map((color) => <button key={color.value} className={`color-swatch ${editor.getStyleForNextShape(DefaultColorStyle) === color.value ? "selected" : ""}`} style={{ backgroundColor: color.css }} aria-label={`筆畫顏色 ${color.value}`} onClick={() => { editor.setStyleForNextShapes(DefaultColorStyle, color.value); editor.setStyleForSelectedShapes(DefaultColorStyle, color.value); }} />)}<span className="divider" />{(["s", "m", "l"] as const).map((size, index) => <button key={size} className={`width-swatch ${editor.getStyleForNextShape(DefaultSizeStyle) === size ? "selected" : ""}`} aria-label={`筆畫粗細 ${size}`} onClick={() => editor.setStyleForNextShapes(DefaultSizeStyle, size)}><span style={{ height: index * 2 + 2 }} /></button>)}</div>}
     <div className="canvas-footer"><span><span className="footer-dot" />自由探索，盡情連結。</span><button onClick={() => setModal("help")}><Command size={12} />鍵盤快捷鍵</button></div>
-    <div className="zoom-controls floating-surface"><IconButton icon={Minus} label="縮小畫布" onClick={() => editor.zoomOut({ animation: { duration: 150 } })} /><button className="zoom-percentage" aria-label="縮放至全部內容" onClick={fitCanvas}>{Math.round(editor.getZoomLevel() * 100)}%</button><IconButton icon={Plus} label="放大畫布" onClick={() => editor.zoomIn({ animation: { duration: 150 } })} /><span className="divider" /><IconButton icon={Maximize} label="檢視全部內容" onClick={fitCanvas} /></div>
+    <div className="zoom-controls floating-surface"><IconButton icon={Minus} label="縮小畫布" onClick={() => editor.zoomOut(undefined, { animation: { duration: 150 } })} /><button className="zoom-percentage" aria-label="縮放至全部內容" onClick={fitCanvas}>{Math.round(editor.getZoomLevel() * 100)}%</button><IconButton icon={Plus} label="放大畫布" onClick={() => editor.zoomIn(undefined, { animation: { duration: 150 } })} /><span className="divider" /><IconButton icon={Maximize} label="檢視全部內容" onClick={fitCanvas} /></div>
     <button className="help-button floating-surface" aria-label="操作指南" onClick={() => setModal("help")}><CircleHelp size={19} /></button>
     {(titleFailed || threadsFailed || versionsFailed) && <div className="storage-warning" role="alert">瀏覽器儲存空間不可用，部分本機資料可能無法保留。請勿關閉頁面。</div>}
     {notice && <div className="toast floating-surface" role="status"><CheckCheck size={16} />{notice}</div>}
 
     {modal === "share" && <ModalFrame title="一起把想法連起來" onClose={closeModal}><div className="share-modal-body"><div className="share-illustration"><span className="avatar">你</span><span className="share-dashed-line" /><span className="invite-avatar"><Plus size={22} /></span></div><p className="modal-description">邀請編輯者共同構思，或用唯讀連結分享架構。</p><div className="connection-notice"><CloudOff size={18} /><div><strong>目前為本機介面預覽</strong><p>尚未連接 Supabase 登入與 Cloudflare 同步服務，文件沒有公開，也沒有可用的分享連結。</p></div></div><label className="field-label">邀請已註冊的 GitHub 使用者</label><div className="invite-field"><input placeholder="GitHub 使用者名稱" disabled /><button className="primary-button" disabled>邀請</button></div><div className="access-row"><LockKeyhole size={17} /><div><strong>連結存取權</strong><span>雲端分享尚未啟用</span></div><button disabled>唯讀 <ChevronDown size={12} /></button></div><button className="secondary-button full-width" disabled><Link2 size={15} />分享連結待串接</button><p className="share-footnote"><ShieldCheck size={13} />正式版本將由伺服器驗證權限，支援邀請與撤權。</p></div></ModalFrame>}
     {modal === "help" && <ModalFrame title="給好想法一個空間" onClose={closeModal}><div className="help-content"><p className="modal-description">參考 FigJam 的輕量浮動介面，為系統架構討論而設計。</p><div className="shortcut-grid">{toolbar.map((tool) => <div key={tool.tool}><span>{tool.label}</span><kbd>{tool.shortcut}</kbd></div>)}<div><span>復原／重做</span><kbd>⌘ Z</kbd></div><div><span>刪除物件</span><kbd>⌫</kbd></div></div><div className="connection-notice"><CloudOff size={18} /><div><strong>目前可操作</strong><p>本機節點、連線、文字、手繪、畫布操作、留言與里程碑預覽。雙擊節點修改名稱。</p><strong>接下來串接</strong><p>GitHub 登入、多人游標、雲端保存、權限、留言即時更新與安全版本還原。此介面不代表 G0／S1–S5 驗收完成。</p></div></div></div></ModalFrame>}
-    {preview && <ModalFrame title={`版本預覽 · ${preview.name}`} onClose={closePreview} wide><div className="preview-note"><Eye size={14} />唯讀本機快照 · 不影響目前畫布</div><div className="milestone-preview"><Tldraw hideUi shapeUtils={architectureShapeUtils} snapshot={{ document: preview.document }} onMount={(previewEditor) => { previewEditor.updateInstanceState({ isReadonly: true }); previewEditor.zoomToFit({ inset: 60 }); }} /></div><div className="preview-footer"><span>雲端安全還原尚未串接</span><button className="secondary-button" onClick={closePreview}>返回目前畫布<ChevronRight size={15} /></button></div></ModalFrame>}
+    {preview && <ModalFrame title={`版本預覽 · ${preview.name}`} onClose={closePreview} wide><div className="preview-note"><Eye size={14} />唯讀本機快照 · 不影響目前畫布</div><div className="milestone-preview"><Tldraw hideUi shapeUtils={architectureShapeUtils} snapshot={preview.document} onMount={(previewEditor) => { previewEditor.updateInstanceState({ isReadonly: true }); const bounds = previewEditor.getCurrentPageBounds(); if (bounds) previewEditor.zoomToBounds(bounds, { inset: 60 }); }} /></div><div className="preview-footer"><span>雲端安全還原尚未串接</span><button className="secondary-button" onClick={closePreview}>返回目前畫布<ChevronRight size={15} /></button></div></ModalFrame>}
   </div>;
 });

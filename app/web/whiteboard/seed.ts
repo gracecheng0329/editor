@@ -21,7 +21,7 @@ export const INITIAL_SERVICE_ID = createShapeId("archly-sync-service");
 export function seedCanvas(editor: Editor) {
   editor.updateInstanceState({ isGridMode: true });
   editor.user.updateUserPreferences({ colorScheme: "light" });
-  if (editor.getCurrentPageShapeIds().size > 0) return;
+  if (editor.getCurrentPageShapeIds().size > 0 || editor.getCurrentPage().meta.archlySeeded) return;
   const nodes: { id: TLShapeId; x: number; y: number; title: string; subtitle: string; kind: NodeKind }[] = [
     { id: createShapeId("archly-client"), x: 80, y: 180, title: "Web Client", subtitle: "Next.js · React · tldraw", kind: "client" },
     { id: createShapeId("archly-web"), x: 420, y: 180, title: "Web Application", subtitle: "文件、登入與產品介面", kind: "service" },
@@ -30,6 +30,7 @@ export function seedCanvas(editor: Editor) {
     { id: createShapeId("archly-storage"), x: 760, y: 410, title: "Version Storage", subtitle: "畫布快照與里程碑版本", kind: "storage" },
   ];
   editor.run(() => {
+    editor.updatePage({ id: editor.getCurrentPageId(), meta: { ...editor.getCurrentPage().meta, archlySeeded: true } });
     editor.createShapes<ArchitectureNode>(nodes.map((node) => ({ id: node.id, type: "architecture-node", x: node.x, y: node.y, props: { title: node.title, subtitle: node.subtitle, kind: node.kind } })));
     connect(editor, nodes[0].id, nodes[1].id, "HTTPS");
     connect(editor, nodes[1].id, nodes[2].id, "WebSocket");
@@ -43,5 +44,8 @@ export function seedCanvas(editor: Editor) {
       { type: "text", x: 760, y: 553, props: { richText: toRichText("畫布與版本"), font: "sans", size: "s", color: "grey", scale: 0.7 } },
     ]);
   }, { history: "ignore" });
-  editor.setCamera({ x: 215, y: 145, z: 0.85 });
+  const viewport = editor.getViewportScreenBounds();
+  const leftInset = viewport.w > 780 ? 295 : 35;
+  const z = Math.max(0.2, Math.min(0.95, (viewport.w - leftInset - 35) / 1000, (viewport.h - 260) / 620));
+  editor.setCamera({ x: leftInset / z - 80, y: 145 / z - 28, z });
 }
