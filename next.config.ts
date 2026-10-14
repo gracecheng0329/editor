@@ -20,7 +20,6 @@ const nextConfig: NextConfig = {
     // reactCompiler: true,
     // turbopackFileSystemCache: true,
     optimizePackageImports: ['lucide-react'],
-    cssChunking: 'strict', // More granular CSS chunks
     inlineCss: true, // Inline critical CSS
     useLightningcss: true, // Faster CSS compilation (experimental)
   },
