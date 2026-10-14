@@ -73,13 +73,32 @@ jobs:
           import urllib.request
           from pathlib import Path
 
-          api_key = os.environ.get("OPENAI_API_KEY")
-          if not api_key:
-              sys.exit("Missing repository secret OPENAI.")
-
           temp = Path(os.environ["RUNNER_TEMP"])
           diff = (temp / "auto-pr.diff").read_text(encoding="utf-8", errors="replace")
           stat = (temp / "auto-pr.stat").read_text(encoding="utf-8", errors="replace")
+
+          def fallback(reason):
+              title = f"合併 {os.environ['HEAD_BRANCH']} 至 {os.environ['BASE_BRANCH']}"[:256]
+              body = (
+                  "## Summary\n\n"
+                  "本 PR 使用 Git 變更摘要；AI 描述未能產生，需人工補充目的與行為。\n\n"
+                  f"```text\n{stat.rstrip()}\n```\n\n"
+                  "## Evidence\n\n"
+                  "- **Before / After:** 僅取得 diff，未執行 lint、測試或 build。\n\n"
+                  "## Merge Danger\n\n"
+                  "**Door:** 待人工評估\n\n"
+                  "**Blast Radius:** 待人工評估\n\n"
+                  f"描述產生狀態：{reason}\n"
+              )
+              (temp / "auto-pr-title.txt").write_text(title, encoding="utf-8")
+              (temp / "auto-pr-body.md").write_text(body, encoding="utf-8")
+              print(f"::warning::{reason} Using Git-based PR content instead.")
+              sys.exit(0)
+
+          api_key = os.environ.get("OPENAI_API_KEY")
+          if not api_key:
+              fallback("Missing repository secret OPENAI.")
+
           truncated = len(diff) > 12000
           payload = {
               "model": "gpt-4o-mini",
@@ -125,11 +144,22 @@ jobs:
               if not title or len(title) > 256 or "\n" in title or "\r" in title or not body:
                   raise ValueError("Invalid PR title or body")
           except urllib.error.HTTPError as error:
-              sys.exit(f"OpenAI API returned HTTP {error.code}.")
+              # Log only recognized codes, never response bodies or credentials.
+              code = None
+              try:
+                  code = json.load(error).get("error", {}).get("code")
+              except (ValueError, AttributeError):
+                  pass
+              known_codes = (
+                  "rate_limit_exceeded", "slow_down", "insufficient_quota",
+                  "billing_hard_limit_reached", "organization_usage_limit_exceeded",
+              )
+              detail = f" ({code})" if code in known_codes else ""
+              fallback(f"OpenAI API returned HTTP {error.code}{detail}.")
           except (urllib.error.URLError, TimeoutError):
-              sys.exit("OpenAI API request failed or timed out.")
+              fallback("OpenAI API request failed or timed out.")
           except (ValueError, KeyError, IndexError, TypeError, AttributeError):
-              sys.exit("OpenAI API returned an invalid PR title/body response.")
+              fallback("OpenAI API returned an invalid PR title/body response.")
 
           if truncated:
               body += "\n\n註：描述依據完整檔案統計與截斷的 diff 產生，未涵蓋所有變更細節。"
