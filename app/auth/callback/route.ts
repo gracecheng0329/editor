@@ -1,3 +1,4 @@
+import { requestOrigin } from '@/lib/http';
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -17,8 +18,8 @@ export async function GET(request: NextRequest) {
     try {
       const client = await createClient();
       const { error } = await client.auth.exchangeCodeForSession(code);
-      if (!error) return redirect(new URL(safeReturn(request.nextUrl.searchParams.get('next')), request.url));
+      if (!error) return redirect(new URL(safeReturn(request.nextUrl.searchParams.get('next')), requestOrigin(request)));
     } catch { /* Show the same retry state for exchange failures. */ }
   }
-  return redirect(new URL('/?auth=failed', request.url));
+  return redirect(new URL('/?auth=failed', requestOrigin(request)));
 }

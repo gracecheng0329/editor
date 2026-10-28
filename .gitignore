@@ -17,6 +17,7 @@
 # next.js
 /.next/
 /.next-g0/
+/.next-s1/
 /test-results/
 /playwright-report/
 /out/

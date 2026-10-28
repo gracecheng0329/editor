@@ -1,9 +1,11 @@
 export const instant = false;
 import Link from 'next/link';
+import { connection } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { DocumentList } from './ui';
 
 export default async function Documents({ searchParams }: { searchParams: Promise<{ logout?: string }> }) {
+  await connection();
   const { logout } = await searchParams;
   let user = null;
   let unavailable = false;

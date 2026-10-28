@@ -1,6 +1,6 @@
 # 專案脈絡：多人協作架構白板
 
-更新日期：2026-10-12（G0 交接）。本文是產品目的、決策與開發狀態的入口；詳細行為以 [總規格](docs/specs/001-collaborative-architecture-whiteboard.md) 及其 [GitHub Issue #1](https://github.com/gracecheng0329/editor/issues/1) 為準。
+更新日期：2026-10-28（S1 本機實作進度）。本文是產品目的、決策與開發狀態的入口；詳細行為以 [總規格](docs/specs/001-collaborative-architecture-whiteboard.md) 及其 [GitHub Issue #1](https://github.com/gracecheng0329/editor/issues/1) 為準。
 
 ## 產品目的與限制
 
@@ -42,7 +42,7 @@
 | 階段 | 可獨立驗收的結果 | 目前狀態 |
 | --- | --- | --- |
 | G0：1–2 工作天技術驗證 | SDK 相容、viewer 拒寫、離線恢復、保存／快照、undo／世代拒寫證據 | 最小本機驗證完成；TV-01～TV-05 通過 |
-| S1：文件與存取 | 登入、文件、邀請、分享與權限矩陣 | 尚未完成；#3 私密文件票已標 `ready-for-agent`、未完成 blocker 為 0；#4 分享／邀請仍有自己的前置條件 |
+| S1：文件與存取 | 登入、文件、邀請、分享與權限矩陣 | #3 登入 UI、私密文件 API／RLS 與本機測試已有實作；真實 GitHub OAuth／部署 smoke 尚待配置與驗證，未結案；#4 分享／邀請仍待自己的前置條件與實作 |
 | S2：即時畫布 | 兩人共同編輯、游標與服務重啟恢復 | 未開始，等待 S1 |
 | S3：離線與手繪 | 斷線合併、筆畫操作與個人 undo | 未開始，等待 S2 |
 | S4：留言 | 錨定、回覆、提及、解決、補讀及訂閱撤權 | 未開始，等待 S3 與訂閱授權驗證 |
