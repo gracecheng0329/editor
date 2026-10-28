@@ -249,3 +249,27 @@ kbd { color: #a6a1ac; font: 10px Arial, sans-serif; }
   .style-popover { gap: 8px; } .modal-backdrop { padding: 12px; } .modal { max-height: calc(100dvh - 24px); } .share-modal-body, .help-content { padding-left: 18px; padding-right: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+
+.product-page { min-height: 100vh; background: #f8f8f5; color: #212b29; padding: 0 8%; font-family: Arial, sans-serif; }
+.product-nav { display: flex; justify-content: space-between; align-items: center; padding: 28px 0; border-bottom: 1px solid #dce3dd; }
+.product-brand { font-weight: 800; font-size: 1.3rem; text-decoration: none; }
+.hero { max-width: 720px; padding: 120px 0 100px; }
+.hero h1, .document-content h1 { font-size: clamp(2.4rem, 5vw, 4.5rem); letter-spacing: -.04em; margin: 16px 0; }
+.hero > p:not(.eyebrow) { font-size: 1.2rem; line-height: 1.8; color: #586762; }
+.eyebrow { color: #438a70; font-size: .75rem; letter-spacing: .16em; font-weight: 700; }
+.primary-button { display: inline-block; background: #1e6e54; color: white; border: 0; border-radius: 8px; padding: 13px 20px; text-decoration: none; cursor: pointer; }
+.primary-button:disabled { opacity: .6; }
+.text-link { margin-left: 24px; }
+.product-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 32px; border-top: 1px solid #dce3dd; padding: 35px 0; color: #586762; }
+.product-features strong { color: #212b29; }
+.document-content { max-width: 900px; margin: 70px auto; }
+.document-content h1 { font-size: 2.6rem; }
+.document-form { margin: 32px 0; }
+.document-form label { display: block; margin-bottom: 8px; font-weight: 600; }
+.document-form div { display: flex; gap: 10px; }
+.document-form input { border: 1px solid #bdccc1; border-radius: 8px; background: white; padding: 12px; min-width: 0; width: 320px; }
+.document-list { list-style: none; padding: 0; }
+.document-list a { display: flex; justify-content: space-between; padding: 20px; border: 1px solid #dce3dd; border-radius: 8px; margin: 10px 0; background: white; text-decoration: none; }
+.notice { background: #fff1db; padding: 14px; border-radius: 8px; }
+.plain-button { border: 0; background: none; cursor: pointer; text-decoration: underline; }
+.canvas-placeholder { margin-top: 40px; min-height: 240px; border: 1px dashed #bdccc1; border-radius: 12px; padding: 30px; color: #586762; }
