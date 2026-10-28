@@ -9,6 +9,11 @@ permissions:
   contents: read
   pull-requests: write
 
+# With the default GITHUB_TOKEN, enable "Allow GitHub Actions to create and
+# approve pull requests" in Settings > Actions > General > Workflow permissions.
+# Alternatively, set AUTO_PR_TOKEN to a token with Contents: read and
+# Pull requests: write for this repository.
+
 # Serialize pushes to the same branch so only one run creates its PR.
 concurrency:
   group: auto-pr-${{ github.ref }}
@@ -26,7 +31,7 @@ jobs:
       - name: Check branch Pull Request
         id: branch_pr
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.AUTO_PR_TOKEN || github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
@@ -170,7 +175,7 @@ jobs:
       - name: Create Pull Request
         if: steps.git_diff.outputs.exists == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.AUTO_PR_TOKEN || github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
@@ -181,5 +186,8 @@ jobs:
             exit 0
           fi
           title=$(cat "$RUNNER_TEMP/auto-pr-title.txt")
-          gh pr create --title "$title" --body-file "$RUNNER_TEMP/auto-pr-body.md" \
-            --base "$BASE_BRANCH" --head "$HEAD_BRANCH"
+          if ! gh pr create --title "$title" --body-file "$RUNNER_TEMP/auto-pr-body.md" \
+            --base "$BASE_BRANCH" --head "$HEAD_BRANCH"; then
+            echo "::error::PR creation failed. If GitHub denied the token, enable Actions PR creation in repository settings or configure AUTO_PR_TOKEN."
+            exit 1
+          fi
