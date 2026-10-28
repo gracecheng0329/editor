@@ -10,6 +10,8 @@
     "test:g0": "playwright test --config playwright.g0.config.ts"
   },
   "dependencies": {
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.118.0",
     "@tldraw/sync": "5.5.2",
     "@tldraw/sync-core": "5.5.2",
     "@tldraw/tlschema": "5.5.2",
