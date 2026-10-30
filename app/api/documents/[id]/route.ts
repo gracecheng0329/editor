@@ -8,9 +8,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     if (!user) return fail('UNAUTHENTICATED', 401);
     const { id } = await params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return fail('NOT_FOUND', 404);
-    const { data, error } = await client.from('documents').select().eq('id', id).eq('owner_id', user.id).maybeSingle();
+    const { data, error } = await client.from('documents').select().eq('id', id).maybeSingle();
     if (error) return fail('SERVICE_UNAVAILABLE', 503);
-    return data ? NextResponse.json(data) : fail('NOT_FOUND', 404);
+    return data ? NextResponse.json({ ...data, role: data.owner_id === user.id ? 'owner' : 'editor' }) : fail('NOT_FOUND', 404);
   } catch { return fail('SERVICE_UNAVAILABLE', 503); }
 }
 

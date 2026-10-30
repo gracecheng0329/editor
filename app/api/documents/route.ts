@@ -19,8 +19,8 @@ export async function GET() {
   try {
     const { client, user } = await identity();
     if (!user) return fail('UNAUTHENTICATED', 401);
-    const { data, error } = await client.from('documents').select().eq('owner_id', user.id).order('created_at', { ascending: false });
+    const { data, error } = await client.from('documents').select().order('created_at', { ascending: false });
     if (error) return fail('SERVICE_UNAVAILABLE', 503);
-    return NextResponse.json(data);
+    return NextResponse.json(data.map(doc => ({ ...doc, role: doc.owner_id === user.id ? 'owner' : 'editor' })));
   } catch { return fail('SERVICE_UNAVAILABLE', 503); }
 }

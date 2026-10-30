@@ -18,6 +18,6 @@ export default async function Documents({ searchParams }: { searchParams: Promis
   return <main className="product-page"><nav className="product-nav"><Link href="/" className="product-brand">◈ Archly</Link>{user && <form action="/auth/logout" method="post"><button className="plain-button">登出</button></form>}</nav>
     <section className="document-content"><p className="eyebrow">YOUR WORKSPACE</p><h1>我的文件</h1>
       {logout === 'failed' && <p role="alert" className="notice">登出未完成，請再試一次。</p>}
-      {unavailable ? <p role="alert">服務暫時無法使用，請重新整理再試。</p> : user ? <DocumentList /> : <p>登入後即可建立及管理私密文件。 <a href="/auth/login?next=%2Fdocuments">使用 GitHub 登入</a></p>}
+      {unavailable ? <p role="alert">服務暫時無法使用，請重新整理再試。</p> : user ? <><label htmlFor="invitation-id">協作邀請 ID</label><input id="invitation-id" value={user.id} readOnly /><p>將此 ID 複製給文件擁有者，即可邀請已完成 GitHub 登入的你成為編輯者。</p><DocumentList /></> : <p>登入後即可建立及管理私密文件。 <a href="/auth/login?next=%2Fdocuments">使用 GitHub 登入</a></p>}
     </section></main>;
 }
