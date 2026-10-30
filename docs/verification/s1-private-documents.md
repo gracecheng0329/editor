@@ -1,6 +1,6 @@
 # S1 #3：私密文件本機驗證
 
-2026-10-28。本次僅處理登入與私密文件中繼資料。Postgres 是 owner／中繼資料權威，沒有新增畫布保存、分享或 editor 資格；#4 仍待自己的驗收。GitHub OAuth provider 尚未配置，真實 OAuth 與部署 smoke test 未執行，#3 保持未完成。
+本頁記錄 **2026-10-28 的 #3 階段**，當時僅處理登入與私密文件中繼資料，未加入分享或 editor 資格。後續 2026-10-30 已完成 #4 的本機程式與測試，包含分享／邀請、owner／editor／viewer 存取；目前完整契約與結果見 [S1 分享與編輯者驗證](s1-sharing.md)。以下 owner-only 契約與六項測試結果保留作為 #3 歷史紀錄，不代表目前不支援 editor 讀取。GitHub OAuth provider 尚未配置，真實 OAuth 與部署 smoke test 未執行，#3／#4 仍未結案。
 
 ## 重現
 

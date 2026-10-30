@@ -37,4 +37,6 @@
 
 失敗先行證據依序為：分享 POST 尚不存在時 expected 200／actual 404；直接 RPC 可指定 token 時 expected error／actual null；editor 路由未存在時 expected 422／actual 404；正式頁尚未顯示協作邀請 ID 時 locator 不存在。最小實作後由上述全套驗證通過。其餘資安邊界測試是額外回歸覆蓋，不宣稱每項都曾失敗。
 
+最終 Spec review 發現直接 Data API 仍可寫入僅含 tab／換行的空白標題。新增回歸先實際失敗：`"\t"` insert 預期 constraint error `23514`，實際被接受。additive migration 006 以與 ECMAScript `trim` 相同的明確字元集合約束資料庫，涵蓋 tab／換行、Unicode 空白與 BOM；插入與更新均拒絕，非 trim 空白的零寬空格仍可保存。既有空白標題改為「未命名文件」，保留原文件 ID、owner、room 與關聯，先修復再驗證 constraint。以合法測試 session 在 migration 前建立空白文件、migration 後重讀，已實際確認 ID／owner／room 保留。修正後全套 S1 **12 passed（40.2s）**；此輪只變更 SQL／測試／文件，沿用前述已通過的應用程式型別／lint／build 結果。
+
 整合測試用獨立合法 Auth sessions 與測試資料庫可信 GitHub identity fixtures；這不是實際 GitHub OAuth 成功證據。真實 OAuth 與必要部署 smoke 尚未配置／執行，#3／#4 保持未結案。已知 Next dev／build 有間歇性 security upgrade advisory 中斷，依指示重跑；這屬工具啟動阻斷，不列為產品行為 red，不升級／修改框架來掩蓋結果。
