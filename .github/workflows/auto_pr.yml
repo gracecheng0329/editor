@@ -41,7 +41,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Create or update PR from issue
+      - name: Validate PR automation
+        run: python3 -m unittest discover -s scripts -p 'test_auto_pr.py'
+
+      - name: Create or update PR with pr skill
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI }}
+          AUTO_PR_BODY_MODEL: ${{ vars.AUTO_PR_BODY_MODEL || 'gpt-4o-mini' }}
+          PR_SKILL_PATH: .agents/skills/pr/SKILL.md
         run: python3 scripts/auto_pr.py sync
 
       # Run in this workflow so reviews also work for PRs created by GITHUB_TOKEN,
