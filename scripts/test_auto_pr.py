@@ -77,11 +77,12 @@ class AutoPRTests(unittest.TestCase):
         payload = json.loads(api.call_args.args[0].data)
         self.assertIn("Use this template for writing the PR body", payload["messages"][0]["content"])
         self.assertTrue(json.loads(payload["messages"][1]["content"])["truncated"])
+        self.assertIn("文件", json.loads(payload["messages"][1]["content"])["glossary"])
         self.assertIn("描述依據截斷", body)
         self.assertIn(auto_pr.BODY_MARKER, body)
 
     def test_body_api_error_or_invalid_template_uses_truthful_fallback(self):
-        for output in (self.response("invalid body"), urllib.error.HTTPError("url", 429, "private-response", {}, None)):
+        for output in (self.response("invalid body"), urllib.error.HTTPError("url", 429, "private-response", {}, None), ConnectionResetError("private-response")):
             with self.subTest(output=type(output).__name__), patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}), patch.object(
                 auto_pr.urllib.request, "urlopen", **({"side_effect": output} if isinstance(output, Exception) else {"return_value": output})
             ):

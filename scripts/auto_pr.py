@@ -78,6 +78,8 @@ def pr_content(issue, diff="", stat="", existing_body=""):
         return title, f"{primary}\n{body}"
     skill_path = REPO_ROOT / os.environ.get("PR_SKILL_PATH", ".agents/skills/pr/SKILL.md")
     skill = skill_path.read_text(encoding="utf-8")
+    glossary_path = REPO_ROOT / "GLOSSARY.md"
+    glossary = glossary_path.read_text(encoding="utf-8") if glossary_path.exists() else ""
     sketch = stat.strip()[:12000] or "變更統計未提供；請檢視 PR diff。"
     body = (
         f"## Summary\n\n{link}\n\n```text\n{sketch}\n```\n\n"
@@ -97,7 +99,7 @@ def pr_content(issue, diff="", stat="", existing_body=""):
                 )},
                 {"role": "user", "content": json.dumps({
                     "issue": issue, "diff": diff[:DIFF_LIMIT], "stat": stat[:12000],
-                    "truncated": len(diff) > DIFF_LIMIT,
+                    "truncated": len(diff) > DIFF_LIMIT, "glossary": glossary[:12000],
                 }, ensure_ascii=False)},
             ], "AUTO_PR_BODY_MODEL")
             if not skill_body(generated):
@@ -173,7 +175,7 @@ def completion(messages, model_env="OPENAI_MODEL"):
         return content
     except urllib.error.HTTPError as error:
         raise ValueError(f"OpenAI API returned HTTP {error.code}") from None
-    except (urllib.error.URLError, TimeoutError):
+    except (OSError, TimeoutError):
         raise ValueError("OpenAI request failed or timed out") from None
     except (KeyError, IndexError, TypeError, AttributeError):
         raise ValueError("OpenAI API returned an invalid response") from None
