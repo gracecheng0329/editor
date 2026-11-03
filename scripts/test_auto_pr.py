@@ -101,7 +101,6 @@ class AutoPRTests(unittest.TestCase):
         ]) as gh, patch.object(auto_pr, "run", side_effect=["app/page.tsx", "Closes #42", "diff", ""]):
             auto_pr.sync()
             self.assertEqual(gh.call_args.kwargs["payload"], dict(zip(("title", "body"), auto_pr.pr_content(self.issue))))
-            self.assertEqual(json.loads(auto_pr.context_path().read_text())["pr"], 7)
 
     def test_sync_creates_pr_with_body_file(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
@@ -115,11 +114,6 @@ class AutoPRTests(unittest.TestCase):
             self.assertIn("--body-file", args)
             self.assertEqual(Path(args[-1]).read_text(), auto_pr.pr_content(self.issue)[1])
 
-    def test_missing_api_key_fails_review(self):
-        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
-            with self.assertRaisesRegex(ValueError, "Missing repository secret OPENAI"):
-                auto_pr.generate_review("diff", self.issue)
-
     def test_empty_diff_does_not_create_pr(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
             "RUNNER_TEMP": directory, "GH_REPO": self.repo,
@@ -128,7 +122,6 @@ class AutoPRTests(unittest.TestCase):
             auto_pr, "run", return_value=""
         ):
             auto_pr.sync()
-            self.assertIsNone(json.loads(auto_pr.context_path().read_text()))
             self.assertEqual(gh.call_count, 1)
 
     def test_incomplete_model_output_is_rejected(self):
@@ -140,70 +133,16 @@ class AutoPRTests(unittest.TestCase):
             auto_pr.urllib.request, "urlopen", return_value=response
         ):
             with self.assertRaisesRegex(ValueError, "incomplete"):
-                auto_pr.generate_review("diff", self.issue)
-
-    def test_review_api_payload_and_truncation(self):
-        response = MagicMock()
-        response.__enter__.return_value.read.return_value = json.dumps({
-            "choices": [{"message": {"content": "沒有明確問題"}, "finish_reason": "stop"}]
-        }).encode()
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}), patch.object(
-            auto_pr.urllib.request, "urlopen", return_value=response
-        ) as request:
-            body = auto_pr.generate_review("x" * (auto_pr.DIFF_LIMIT + 1), self.issue)
-            payload = json.loads(request.call_args.args[0].data)
-            supplied = json.loads(payload["messages"][1]["content"])
-            self.assertEqual(len(supplied["diff"]), auto_pr.DIFF_LIMIT)
-            self.assertTrue(supplied["truncated"])
-            self.assertIn("僅審查前 60,000", body)
-            self.assertIn("未執行測試", body)
+                auto_pr.completion([])
 
     def test_http_error_does_not_expose_response_or_key(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}), patch.object(
             auto_pr.urllib.request, "urlopen",
             side_effect=urllib.error.HTTPError("url", 429, "secret-response", {}, None),
         ):
-            with self.assertRaisesRegex(ValueError, "^OpenAI API returned HTTP 429; AI review was not posted$"):
-                auto_pr.generate_review("diff", self.issue)
+            with self.assertRaisesRegex(ValueError, "^OpenAI API returned HTTP 429$"):
+                auto_pr.completion([])
 
-    def run_review(self, responses):
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        self.contexts.enter_context(patch.dict(os.environ, {
-            "RUNNER_TEMP": directory.name, "GH_REPO": self.repo,
-            "GITHUB_SHA": "abc", "BASE_BRANCH": "main",
-        }))
-        auto_pr.context_path().write_text(json.dumps({"pr": 7, "issue": self.issue}))
-        gh = self.contexts.enter_context(patch.object(auto_pr, "gh_json", side_effect=responses))
-        self.contexts.enter_context(patch.object(auto_pr, "run", return_value="diff"))
-        generate = self.contexts.enter_context(patch.object(auto_pr, "generate_review", return_value="review"))
-        auto_pr.review()
-        return gh, generate
-
-    def test_review_is_a_comment_pinned_to_commit(self):
-        opened = {"headRefOid": "abc", "state": "OPEN"}
-        gh, generate = self.run_review([opened, [[]], opened, {}])
-        payload = gh.call_args.kwargs["payload"]
-        self.assertEqual(payload["event"], "COMMENT")
-        self.assertEqual(payload["commit_id"], "abc")
-        self.assertIn(auto_pr.MARKER, payload["body"])
-        generate.assert_called_once()
-
-    def test_review_deduplicates_same_commit(self):
-        gh, generate = self.run_review([
-            {"headRefOid": "abc", "state": "OPEN"},
-            [[{"commit_id": "abc", "body": auto_pr.MARKER}]],
-        ])
-        generate.assert_not_called()
-        self.assertEqual(gh.call_count, 2)
-
-    def test_new_push_during_review_prevents_stale_post(self):
-        gh, generate = self.run_review([
-            {"headRefOid": "abc", "state": "OPEN"}, [[]],
-            {"headRefOid": "new", "state": "OPEN"},
-        ])
-        generate.assert_called_once()
-        self.assertEqual(gh.call_count, 3)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,15 @@
 
 Issues are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
 
+### PR review
+
+Before creating a PR or pushing branch changes that create or update one, run
+`.agents/skills/code-review/SKILL.md` locally against the target branch's pinned
+merge-base. Run Standards and Spec in parallel, fix actionable findings, and
+recheck affected changes. Record the reviewed base/head, separate findings and
+remaining limitations in the PR's Evidence section using the `pr` skill. Review
+new changes before subsequent pushes. See `docs/auto-pr.md` for the full flow.
+
 ### Triage labels
 
 The default five-label triage vocabulary is in use. See `docs/agents/triage-labels.md`.
