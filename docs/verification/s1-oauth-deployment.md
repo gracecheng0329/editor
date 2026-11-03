@@ -1,6 +1,6 @@
 # S1 真實 OAuth 與部署驗收
 
-本文件補上 #3／#4 最後的設定與驗收路徑。**設定引導、preflight、真實 OAuth smoke 是三種不同證據**；未取得最後一項前，維持 PR draft 與票券未結案。
+本文件補上 #3／#4 最後的設定與驗收路徑。**設定引導、preflight、真實 OAuth smoke 是三種不同證據**；全部必要驗收通過前，維持 PR draft 與票券未結案。
 
 ## 本機 GitHub OAuth
 
@@ -65,6 +65,24 @@ node --test scripts/test-local-github-oauth.mjs scripts/test-s1-preflight.mjs
 
 這些測試使用私密暫存檔與隔離 HTTP fixture，驗證設定載入、憑證拒絕、PKCE／callback 檢查、錯誤 provider 與錯誤匿名授權的偵測。不是外部 GitHub OAuth 或 Vercel 成功證據；不宣稱每一項都有失敗先行紀錄。
 
-2026-11-03：使用者已透過私密引導設定本機 OAuth App，Auth 重啟與七項服務健康檢查成功，五項真實本機 preflight 通過；瀏覽器已到達 GitHub 真實登入頁。原有 S1 回歸 **12 passed（29.0s）**，新增三項工具測試與全專案 lint 通過。preflight 的無效 JSON 保密回歸先實際失敗（錯誤包含 fixture 回應片段），轉成受控錯誤後同一測試通過。首輪 S1 測試曾被 Next 啟動提醒中止，連線拒絕不列為產品 red；重跑後取得上述通過結果。本輪未修改應用程式或 SQL，沒有重跑 production build。真實登入成功與遠端部署 smoke 仍待獨立記錄。
+2026-11-03：使用者已透過私密引導設定本機 OAuth App，Auth 重啟與七項服務健康檢查成功，五項真實本機 preflight 通過；瀏覽器已到達 GitHub 真實登入頁。原有 S1 回歸 **12 passed（29.0s）**，新增三項工具測試與全專案 lint 通過。preflight 的無效 JSON 保密回歸先實際失敗（錯誤包含 fixture 回應片段），轉成受控錯誤後同一測試通過。首輪 S1 測試曾被 Next 啟動提醒中止，連線拒絕不列為產品 red；重跑後取得上述通過結果。本輪未修改應用程式或 SQL，沒有重跑 production build。本機真實登入後的結果見下節；遠端部署 smoke 尚未執行。
+
+## 本機真實 OAuth smoke 結果（2026-11-03）
+
+使用者自行完成 GitHub 登入／授權後，伺服器確認建立真實 GitHub 身分與有效 Auth session，產品 `/documents` 回應 200。接著由 agent 在 Codex 內建瀏覽器以原登入身分完成，沒有匯出或重建 session：
+
+| 操作 | 實際結果 |
+| --- | --- |
+| 建立文件 | 建立 `S1 OAuth smoke 2026-11-03`，清單出現可開啟的文件 |
+| 重新開啟 | 從清單開啟，顯示擁有者身分及原標題 |
+| 改名並保存 | 改為 `S1 OAuth smoke — 已改名`，顯示「標題已儲存」 |
+| 重新載入 | 真正 reload 後仍顯示新標題，非僅保留表單狀態 |
+| 登出與重開原文件 | 登出返回首頁；重新造訪原文件顯示「請先登入」，不顯示文件標題或存取設定 |
+
+![真實 GitHub 登入後，文件改名並重新載入仍保留標題](images/s1-oauth-local.jpg)
+
+此輪驗證程式基準為 `7fd9ff8`，origin 為 `http://127.0.0.1:3000`，Supabase 為 `http://127.0.0.1:54321`。測試文件保留在本機私密清單，未啟用分享。畫面只含測試標題，沒有憑證或個人資料。
+
+這已完成單一真實 GitHub 帳號的本機登入／文件／登出 smoke。第二個真實 GitHub 帳號的邀請旅程、遠端 OAuth／部署 smoke 尚未執行；先前的獨立測試身分與角色矩陣回歸不改標為真實多帳號 OAuth 證據。#3／#4 與 PR 維持未結案／draft。
 
 官方依據：[GoTrue 自架設定](https://supabase.com/docs/guides/self-hosting/auth/config)、[GitHub provider 設定](https://supabase.com/docs/guides/auth/social-sign-in/auth-github)、[Vercel Git 部署](https://vercel.com/docs/git)。Next.js 環境變數與部署行為另已對照本機安裝版本的 `node_modules/next/dist/docs/`。

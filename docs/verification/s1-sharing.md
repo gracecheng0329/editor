@@ -39,4 +39,4 @@
 
 最終 Spec review 發現直接 Data API 仍可寫入僅含 tab／換行的空白標題。新增回歸先實際失敗：`"\t"` insert 預期 constraint error `23514`，實際被接受。additive migration 006 以與 ECMAScript `trim` 相同的明確字元集合約束資料庫，涵蓋 tab／換行、Unicode 空白與 BOM；插入與更新均拒絕，非 trim 空白的零寬空格仍可保存。既有空白標題改為「未命名文件」，保留原文件 ID、owner、room 與關聯，先修復再驗證 constraint。以合法測試 session 在 migration 前建立空白文件、migration 後重讀，已實際確認 ID／owner／room 保留。修正後全套 S1 **12 passed（40.2s）**；此輪只變更 SQL／測試／文件，沿用前述已通過的應用程式型別／lint／build 結果。
 
-整合測試用獨立合法 Auth sessions 與測試資料庫可信 GitHub identity fixtures；這不是實際 GitHub OAuth 成功證據。真實 OAuth 與必要部署 smoke 尚未配置／執行，#3／#4 保持未結案。已知 Next dev／build 有間歇性 security upgrade advisory 中斷，依指示重跑；這屬工具啟動阻斷，不列為產品行為 red，不升級／修改框架來掩蓋結果。
+整合測試用獨立合法 Auth sessions 與測試資料庫可信 GitHub identity fixtures；這不是實際 GitHub OAuth 成功證據。2026-11-03 已另行通過單一真實 GitHub 帳號的本機登入／文件／登出 smoke，見 [OAuth 驗收紀錄](s1-oauth-deployment.md)。第二個真實 GitHub 帳號的邀請旅程及遠端部署 smoke 尚未執行，#3／#4 保持未結案。已知 Next dev／build 有間歇性 security upgrade advisory 中斷，依指示重跑；這屬工具啟動阻斷，不列為產品行為 red，不升級／修改框架來掩蓋結果。
