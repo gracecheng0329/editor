@@ -17,6 +17,7 @@
 # next.js
 /.next/
 /.next-g0/
+/.next-s1/
 /test-results/
 /playwright-report/
 /out/
@@ -36,6 +37,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+/.local-supabase/
 
 # vercel
 .vercel

@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  distDir: process.env.G0_ENABLED === "1" ? ".next-g0" : ".next",
+  distDir: process.env.S1_ENABLED === "1" ? ".next-s1" : process.env.G0_ENABLED === "1" ? ".next-g0" : ".next",
   /* config options here */
   output: 'standalone',
   reactStrictMode: true,
