@@ -10,6 +10,8 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+For S1 sign-in and document access, follow the [local Supabase setup](docs/verification/local-supabase.md) and [GitHub OAuth / deployment verification guide](docs/verification/s1-oauth-deployment.md). The latter covers the separate Auth and app callbacks, private local provider settings, and the real browser smoke checklist.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

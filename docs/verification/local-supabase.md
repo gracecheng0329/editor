@@ -25,7 +25,7 @@ node scripts/verify-local-supabase.mjs --restart
 | Studio | http://127.0.0.1:54323 |
 | Mailpit | http://127.0.0.1:54324 |
 
-服務連接埠只綁定 IPv4 loopback。這是本機開發環境，Studio 不另設登入，email signup 自動確認。GitHub OAuth 尚須配置專用 OAuth app 的 client ID／secret；本環境的 email 測試身分不能當成 GitHub OAuth 驗收。
+服務連接埠只綁定 IPv4 loopback。這是本機開發環境，Studio 不另設登入，email signup 自動確認。GitHub OAuth 可透過私密的 `.local-supabase/github-oauth.env` 配置專用 App client ID／secret；設定與真實登入驗收見 [S1 OAuth／部署引導](s1-oauth-deployment.md)。本環境的 email 測試身分不能當成 GitHub OAuth 驗收。
 
 `.local-supabase/` 已加入 Git 忽略，目錄權限為 0700，產生的設定與金鑰檔為 0600（不含憑證的官方 SQL 為 0644，供容器讀取）：
 

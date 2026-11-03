@@ -3,6 +3,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { localGithubOAuth } from "./local-github-oauth.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const state = resolve(root, ".local-supabase");
@@ -107,6 +108,8 @@ async function start(service, { env = {}, args = [], ports = [], mounts = [], me
 }
 
 async function up() {
+  // Reject invalid credentials before restarting any running services.
+  const githubOAuth = await localGithubOAuth(resolve(state, "github-oauth.env"));
   await run(["system", "start"]);
   const settings = await config();
   // Downloads only; the pinned official SQL is not executed on the host.
@@ -156,6 +159,7 @@ async function up() {
     GOTRUE_JWT_SECRET: settings.jwtSecret, GOTRUE_JWT_EXP: "3600", GOTRUE_JWT_AUD: "authenticated", GOTRUE_JWT_ADMIN_ROLES: "service_role", GOTRUE_JWT_DEFAULT_GROUP_NAME: "authenticated",
     GOTRUE_DISABLE_SIGNUP: "false", GOTRUE_EXTERNAL_EMAIL_ENABLED: "true", GOTRUE_MAILER_AUTOCONFIRM: "true", GOTRUE_EXTERNAL_PHONE_ENABLED: "false",
     GOTRUE_SMTP_HOST: await ip("mail"), GOTRUE_SMTP_PORT: "1025", GOTRUE_SMTP_ADMIN_EMAIL: "admin@localhost.test", GOTRUE_SMTP_SENDER_NAME: "Local Supabase",
+    ...githubOAuth,
   } });
   await start("rest", { env: { PGRST_DB_URI: database("authenticator"), PGRST_DB_SCHEMAS: "public,graphql_public", PGRST_DB_ANON_ROLE: "anon", PGRST_JWT_SECRET: settings.jwtSecret, PGRST_DB_EXTRA_SEARCH_PATH: "public,extensions", PGRST_ADMIN_SERVER_PORT: "3001" } });
   const gatewayPath = resolve(state, "kong.yml");
