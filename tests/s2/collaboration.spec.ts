@@ -27,9 +27,12 @@ test('two authorized identities see each other and collaborate on nodes', async 
     const canvas = alice.getByLabel('文件畫布', { exact: true });
     await Promise.all([canvas.scrollIntoViewIfNeeded(), bob.getByLabel('文件畫布', { exact: true }).scrollIntoViewIfNeeded()]);
     const box = (await canvas.boundingBox())!;
-    await alice.mouse.move(box.x + 280, box.y + 230);
-    await alice.mouse.move(box.x + 300, box.y + 250, { steps: 5 });
-    await expect(bob.locator('.tl-collaborator__cursor')).toBeVisible();
+    let cursorMove = 0;
+    await expect.poll(async () => {
+      cursorMove += 1;
+      await alice.mouse.move(box.x + 280 + cursorMove % 20, box.y + 230 + cursorMove % 20);
+      return bob.locator('.tl-collaborator__cursor').isVisible();
+    }, { timeout: 10000 }).toBe(true);
     await bob.getByLabel('文件畫布', { exact: true }).screenshot({ path: '/private/tmp/editor-s2-collaboration.png' });
     await bob.getByRole('button', { name: '選取 Shared service', exact: true }).click();
     await expect(alice.getByLabel('選取節點名稱')).toHaveCount(0);
