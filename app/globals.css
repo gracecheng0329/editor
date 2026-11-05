@@ -250,7 +250,7 @@ kbd { color: #a6a1ac; font: 10px Arial, sans-serif; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
 
-.product-page { min-height: 100vh; background: #f8f8f5; color: #212b29; padding: 0 8%; font-family: Arial, sans-serif; }
+.product-page { height: 100dvh; overflow-y: auto; min-height: 100vh; background: #f8f8f5; color: #212b29; padding: 0 8%; font-family: Arial, sans-serif; }
 .product-nav { display: flex; justify-content: space-between; align-items: center; padding: 28px 0; border-bottom: 1px solid #dce3dd; }
 .product-brand { font-weight: 800; font-size: 1.3rem; text-decoration: none; }
 .hero { max-width: 720px; padding: 120px 0 100px; }
@@ -273,3 +273,9 @@ kbd { color: #a6a1ac; font: 10px Arial, sans-serif; }
 .notice { background: #fff1db; padding: 14px; border-radius: 8px; }
 .plain-button { border: 0; background: none; cursor: pointer; text-decoration: underline; }
 .canvas-placeholder { margin-top: 40px; min-height: 240px; border: 1px dashed #bdccc1; border-radius: 12px; padding: 30px; color: #586762; }
+
+.document-canvas { position: relative; height: 680px; width: 100%; border: 1px solid #d8dedc; border-radius: 12px; overflow: hidden; margin-top: 24px; }
+.canvas-controls { position: absolute; z-index: 300; top: 12px; right: 12px; width: 240px; max-height: calc(100% - 24px); overflow: auto; padding: 12px; background: white; border: 1px solid #d8dedc; border-radius: 8px; display: grid; gap: 8px; font-size: 13px; }
+.canvas-controls input { width: 100%; border: 1px solid #c7cecb; padding: 6px; }
+.canvas-controls button { padding: 6px; border: 1px solid #c7cecb; border-radius: 4px; background: #f6f8f7; }
+.canvas-controls ul { margin: 0; padding: 0; list-style: none; }

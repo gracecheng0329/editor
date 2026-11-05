@@ -42,6 +42,7 @@
   ],
   "exclude": [
     "node_modules",
-    "g0"
+    "g0",
+    "sync"
   ]
 }
