@@ -4,11 +4,12 @@ import { Database, Globe, HardDrive, Layers3, Server, type LucideIcon } from "lu
 import {
   BaseBoxShapeUtil,
   HTMLContainer,
-  T,
   useEditor,
   useValue,
   type TLShape,
 } from "tldraw";
+
+import { architectureNodeProps } from "../../../packages/canvas/schema";
 
 export const NODE_KINDS = {
   client: { label: "用戶端", description: "Web 與行動裝置", icon: Globe, color: "blue" },
@@ -54,7 +55,7 @@ function NodeContent({ shape }: { shape: ArchitectureNode }) {
 
 export class ArchitectureNodeUtil extends BaseBoxShapeUtil<ArchitectureNode> {
   static override type = "architecture-node" as const;
-  static override props = { w: T.number, h: T.number, title: T.string, subtitle: T.string, kind: T.literalEnum("client", "service", "database", "storage", "queue") };
+  static override props = architectureNodeProps;
   getDefaultProps(): ArchitectureNode["props"] {
     return { w: 216, h: 98, title: "應用服務", subtitle: "描述這個元件的職責", kind: "service" };
   }

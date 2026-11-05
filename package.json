@@ -21,7 +21,8 @@
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "tldraw": "5.5.2"
+    "tldraw": "5.5.2",
+    "@tldraw/validate": "5.5.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
