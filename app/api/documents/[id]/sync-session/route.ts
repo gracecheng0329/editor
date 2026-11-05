@@ -14,6 +14,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     if (!data) return fail('NOT_FOUND', 404);
     const { data: { session } } = await client.auth.getSession();
     if (!session) return fail('UNAUTHENTICATED', 401);
-    return NextResponse.json({ accessToken: session.access_token, user: { id: user.id, name: user.user_metadata?.user_name ?? user.user_metadata?.name ?? '協作者' } }, { headers: { 'Cache-Control': 'private, no-store' } });
+    const rawName = user.user_metadata?.user_name ?? user.user_metadata?.name;
+    const name = typeof rawName === 'string' && rawName.trim() ? rawName.trim().slice(0, 80) : `協作者 ${user.id.slice(0, 8)}`;
+    return NextResponse.json({ accessToken: session.access_token, user: { id: user.id, name } }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch { return fail('SERVICE_UNAVAILABLE', 503); }
 }
