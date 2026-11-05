@@ -15,6 +15,10 @@ BODY_MARKER = "<!-- auto-pr-body -->"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+class MissingIssueError(ValueError):
+    """The branch has no issue reference; automatic PR synchronization can skip it."""
+
+
 def run(*args, data=None):
     return subprocess.run(
         args, input=data, text=True, check=True, capture_output=True
@@ -48,7 +52,7 @@ def issue_number(branch, commits, pr, repo, override=""):
             return candidates.pop()
         if len(candidates) > 1:
             raise ValueError("Multiple issues found; use workflow_dispatch issue_number to choose one")
-    raise ValueError("No issue found; use issue-123/topic, a commit reference #123, or workflow_dispatch issue_number")
+    raise MissingIssueError("No issue found; use issue-123/topic, a commit reference #123, or workflow_dispatch issue_number")
 
 
 def skill_body(body):
@@ -124,7 +128,11 @@ def sync():
         print("No changes against base; skipping PR synchronization.")
         return
     commits = run("git", "log", f"origin/{base}..HEAD", "--format=%B")
-    number = issue_number(branch, commits, pr, repo, os.environ.get("ISSUE_NUMBER", ""))
+    try:
+        number = issue_number(branch, commits, pr, repo, os.environ.get("ISSUE_NUMBER", ""))
+    except MissingIssueError as error:
+        print(f"::warning::{error}; skipping PR synchronization.")
+        return
     # gh issue view rejects PR numbers, which share GitHub's issue number space.
     issue = gh_json("issue", "view", str(number), "--json", "number,title,body,url")
     diff = run("git", "diff", "--no-ext-diff", f"origin/{base}...HEAD")

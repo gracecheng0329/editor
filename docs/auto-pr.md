@@ -15,7 +15,9 @@
 
 每次 push 到 `main` 以外的分支，`.github/workflows/auto_pr.yml` 只驗證自動化腳本並建立／同步 PR：標題完全採用 issue title；依 `.agents/skills/pr/SKILL.md` 產生 `Summary`、`Evidence`、`Merge Danger` 內文。Summary 附 issue 連結及簡短變更圖；Evidence 使用 Before／After；Merge Danger 包含 Door 與 Blast Radius。
 
-Issue 編號依序採用：手動執行 workflow 的 `issue_number`、內文的 `auto-pr-issue` 主 issue 標記、既有 PR 的關聯 issue 或同 repo issue URL、分支編號、分支相對 `main` 的 commit 訊息中的 `#123`。主 issue 標記可避免相關票券連結造成歧義。分支格式例如 `issue-123/topic`、`codex/issue-123-topic`、`codex/123-topic`。找不到編號或同一來源有多個 issue 時，流程會失敗；可手動執行 workflow 指定 `issue_number`。
+Issue 編號依序採用：手動執行 workflow 的 `issue_number`、內文的 `auto-pr-issue` 主 issue 標記、既有 PR 的關聯 issue 或同 repo issue URL、分支編號、分支相對 `main` 的 commit 訊息中的 `#123`。主 issue 標記可避免相關票券連結造成歧義。分支格式例如 `issue-123/topic`、`codex/issue-123-topic`、`codex/123-topic`。
+
+完全找不到 issue 編號時（例如 `test/s1-smoke-test` 的提交也沒有 issue 引用），流程顯示 warning 並成功結束，不建立或修改 PR。需要同步 PR 時，可手動執行 workflow 指定 `issue_number`，或在後續 commit 訊息加入正確的 `#123`。同一來源有多個 issue，或手動輸入不是正整數時仍會失敗，避免誤連票券。
 
 自動產生的內文帶 `auto-pr-body` 標記，每次 push 更新。人工撰寫且符合 skill 完整欄位的內文會保留，避免覆蓋本機審查與測試證據；人工維護時移除 `auto-pr-body` 標記。`auto-pr-issue` 僅記錄主 issue，不是關閉指令。
 
