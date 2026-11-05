@@ -1,6 +1,7 @@
 """Offline regression tests: python3 -m unittest discover -s scripts -p 'test_auto_pr.py'."""
 
 from contextlib import ExitStack
+from io import StringIO
 import json
 import os
 from pathlib import Path
@@ -122,6 +123,31 @@ class AutoPRTests(unittest.TestCase):
             auto_pr, "run", return_value=""
         ):
             auto_pr.sync()
+            self.assertEqual(gh.call_count, 1)
+
+    def test_sync_skips_unlinked_branch_without_creating_pr(self):
+        with patch.dict(os.environ, {
+            "HEAD_BRANCH": "test/s1-smoke-test", "BASE_BRANCH": "main", "ISSUE_NUMBER": "",
+        }), patch.object(auto_pr, "gh_json", return_value=[]) as gh, patch.object(
+            auto_pr, "run", side_effect=["README.md", "test: s1 smoke test, chore: update readme"]
+        ) as run, patch("sys.stdout", new_callable=StringIO) as output:
+            auto_pr.sync()
+            self.assertIn("::warning::No issue found", output.getvalue())
+            self.assertIn("skipping PR synchronization", output.getvalue())
+            self.assertEqual(gh.call_count, 1)
+            self.assertEqual(run.call_count, 2)
+
+    def test_sync_still_rejects_ambiguous_or_invalid_issue(self):
+        for commits, override, message in (
+            ("Refs #42 and #43", "", "Multiple issues found"),
+            ("no reference", "invalid", "issue_number must be a positive integer"),
+        ):
+            with self.subTest(commits=commits, override=override), patch.dict(os.environ, {
+                "HEAD_BRANCH": "test/s1-smoke-test", "BASE_BRANCH": "main", "ISSUE_NUMBER": override,
+            }), patch.object(auto_pr, "gh_json", return_value=[]) as gh, patch.object(
+                auto_pr, "run", side_effect=["README.md", commits]
+            ), self.assertRaisesRegex(ValueError, message):
+                auto_pr.sync()
             self.assertEqual(gh.call_count, 1)
 
     def test_incomplete_model_output_is_rejected(self):

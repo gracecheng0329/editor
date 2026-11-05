@@ -40,3 +40,26 @@
 最終 Spec review 發現直接 Data API 仍可寫入僅含 tab／換行的空白標題。新增回歸先實際失敗：`"\t"` insert 預期 constraint error `23514`，實際被接受。additive migration 006 以與 ECMAScript `trim` 相同的明確字元集合約束資料庫，涵蓋 tab／換行、Unicode 空白與 BOM；插入與更新均拒絕，非 trim 空白的零寬空格仍可保存。既有空白標題改為「未命名文件」，保留原文件 ID、owner、room 與關聯，先修復再驗證 constraint。以合法測試 session 在 migration 前建立空白文件、migration 後重讀，已實際確認 ID／owner／room 保留。修正後全套 S1 **12 passed（40.2s）**；此輪只變更 SQL／測試／文件，沿用前述已通過的應用程式型別／lint／build 結果。
 
 整合測試用獨立合法 Auth sessions 與測試資料庫可信 GitHub identity fixtures；這不是實際 GitHub OAuth 成功證據。2026-11-03 已另行通過單一真實 GitHub 帳號的本機登入／文件／登出 smoke，見 [OAuth 驗收紀錄](s1-oauth-deployment.md)。第二個真實 GitHub 帳號的邀請旅程及遠端部署 smoke 尚未執行，#3／#4 保持未結案。已知 Next dev／build 有間歇性 security upgrade advisory 中斷，依指示重跑；這屬工具啟動阻斷，不列為產品行為 red，不升級／修改框架來掩蓋結果。
+
+## 本機驗收複驗（2026-11-03）
+
+使用者確認保留 #4、不再拆票，本輪只完成本機驗收；目前沒有第二個真實 GitHub 帳號。程式基準為 `2ed6f062f9262d7b9c15802075c81564c27b63b5`，本輪不修改產品程式或資料庫 migration。
+
+| 驗證 | 本輪結果 |
+| --- | --- |
+| `node scripts/verify-local-supabase.mjs` | 全項通過：獨立 Auth sessions、REST 寫入／讀回、資料庫使用者隔離、保存資料讀取、gateway API key 拒絕與 Studio／metadata 查詢 |
+| `node scripts/s1-preflight.mjs http://127.0.0.1:3000 http://127.0.0.1:54321` | 5 項通過；確認首頁、匿名文件清單拒絕、OAuth 取消可重試、PKCE／產品 callback 與 GitHub provider callback 設定 |
+| `node node_modules/@playwright/test/cli.js test --config playwright.s1.config.ts` | **12 passed（28.3s）**；正式頁面 origin 為 `http://127.0.0.1:3101`，連接真實本機 Supabase `http://127.0.0.1:54321` |
+| `node --test scripts/test-local-github-oauth.mjs scripts/test-s1-preflight.mjs` | **3 passed**；涵蓋私密 OAuth 設定、無效憑證拒絕與 preflight 錯誤處理 |
+
+獨立 owner／editor／匿名 viewer browser contexts 的完整旅程已通過：授予 editor、從受邀者清單開啟、禁止 editor 管理、分享者取得 viewer 身分、editor 撤權後拒絕原文件但持有效分享連結可降為 viewer，以及分享撤銷後拒絕讀取。API／Data API／RPC 測試另確認分享輪替使舊 token 失效、跨文件隔離、重複授予唯一性、可信 GitHub identity 判定、登出後舊 JWT 拒絕管理，以及撤銷分享不影響 owner／仍有效 editor。
+
+沙箱初次禁止容器存取及測試伺服器綁定 loopback；授權後以相同命令通過，環境拒絕不列為產品測試失敗。既有 port 3000 服務已通過 preflight，未停止或重啟它。此次未重新執行真實 GitHub 登入，沿用前節單一帳號的既有證據；測試 fixtures 不算真實雙帳號 OAuth 驗收。
+
+本輪本機驗收完成。真實雙 GitHub 帳號邀請、遠端部署 smoke 仍未驗證，#4 保持開啟；畫布唯讀及既有 WebSocket／留言訂閱撤權仍依原切片承接。本輪僅補充驗收文件，不重跑型別、lint、production build 或 G0；既有結果不改記為本輪通過。
+
+## 遠端單帳號驗收（2026-11-05）
+
+在 `https://editor-one-topaz.vercel.app`、部署 commit `2ed6f062f9262d7b9c15802075c81564c27b63b5` 完成真實 GitHub 登入、文件建立／開啟／改名重載、分享輪替、登出後匿名觀看、分享撤銷及登出後私密拒絕。修正過程包括使用者啟用 GitHub provider、經明確批准加入精確產品 callback，以及經明確批准在全新遠端資料庫一次套用六份 S1 migrations。詳細結果、部署識別及截圖見 [遠端 smoke 紀錄](s1-oauth-deployment.md#migration-套用與單帳號遠端-smoke-完成2026-11-05)。
+
+單帳號可執行的遠端 smoke 已通過；第二個真實 GitHub 帳號的 editor 邀請／撤權旅程仍未驗證，#4 保持開啟，不再拆票。本次匿名驗收使用產品登出後的瀏覽器，沒有宣稱多個獨立 browser contexts 同時通過。
