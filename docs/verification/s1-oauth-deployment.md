@@ -41,7 +41,7 @@
    ```
 
    Next.js 不需要 GitHub client secret 或 Supabase service-role key。公開變數在 build 時固定；變更後要重新部署。
-5. 到專案 Deployments → Create Deployment，指定 `codex/s1-integration`；核對部署 commit 包含本輪修改。不要用仍是舊程式的 `main` 部署作 S1 驗收。使用此部署的固定 HTTPS 網址，避免測試中 alias 指向另一提交。若 Vercel Deployment Protection 阻擋匿名工具，記錄為未驗證，改由已授權 browser contexts 驗收；不要將保護頁誤判為產品成功。
+5. 部署已合併 S1 的 `main`，核對部署 commit 包含 S1 實作。2026-11-05 首次遠端驗收版本為 `2ed6f062f9262d7b9c15802075c81564c27b63b5`。驗收時固定產品 origin 並記錄對應 deployment，避免測試中 alias 指向另一提交。若 Vercel Deployment Protection 阻擋匿名工具，記錄為未驗證，改由已授權 browser contexts 驗收；不要將保護頁誤判為產品成功。
 6. 在 Supabase Authentication → URL Configuration 設定 Site URL 為固定產品 origin；Redirect URLs 加入精確的 `https://<app-origin>/auth/callback`。這是 **產品 callback**；GitHub 的 Supabase callback 保持不變。遠端 OAuth App 的 Homepage 更新為產品 origin。
 7. 將部署 origin 與 Supabase origin 交給 agent，執行 `node scripts/s1-preflight.mjs https://<app-origin> https://<project-ref>.supabase.co`，再執行下列真實 smoke。
 
@@ -86,3 +86,46 @@ node --test scripts/test-local-github-oauth.mjs scripts/test-s1-preflight.mjs
 這已完成單一真實 GitHub 帳號的本機登入／文件／登出 smoke。第二個真實 GitHub 帳號的邀請旅程、遠端 OAuth／部署 smoke 尚未執行；先前的獨立測試身分與角色矩陣回歸不改標為真實多帳號 OAuth 證據。#3／#4 與 PR 維持未結案／draft。
 
 官方依據：[GoTrue 自架設定](https://supabase.com/docs/guides/self-hosting/auth/config)、[GitHub provider 設定](https://supabase.com/docs/guides/auth/social-sign-in/auth-github)、[Vercel Git 部署](https://vercel.com/docs/git)。Next.js 環境變數與部署行為另已對照本機安裝版本的 `node_modules/next/dist/docs/`。
+
+## 遠端 smoke 首輪（2026-11-05）
+
+使用者提供部署 origin `https://editor-one-topaz.vercel.app`；實際登入跳轉確認其 Auth origin 為 `https://gnmaayjhlnrlqcpxkjjw.supabase.co`，與 Dashboard 的 `editor-s1-test` 專案一致。部署 commit 尚未核對，不能以本機 HEAD 代替部署版本。
+
+執行 `node scripts/s1-preflight.mjs https://editor-one-topaz.vercel.app https://gnmaayjhlnrlqcpxkjjw.supabase.co`：首頁、匿名文件清單拒絕、取消 OAuth 可重試及 PKCE／產品 callback 四項檢查通過後，在 GitHub provider redirect 檢查失敗（exit 1）。瀏覽器另確認遠端首頁正常顯示產品內容。
+
+對實際登入跳轉進行受控診斷：產品 `/auth/login` 回傳 307，導向預期 Supabase `/auth/v1/authorize`；Auth 回傳 HTTP 400、`error_code=validation_failed`、`Unsupported provider: provider is not enabled`。Dashboard 亦顯示 GitHub DISABLED，Client ID／Client Secret 尚未設定。未記錄 OAuth state、cookie、token 或 secret。
+
+本輪停在遠端 GitHub provider 設定：需使用者建立遠端 OAuth App（callback 為 `https://gnmaayjhlnrlqcpxkjjw.supabase.co/auth/v1/callback`），直接在 Supabase 設定 Client ID／Client Secret 並啟用 GitHub。完成後重跑相同 preflight，再執行真實登入及文件／分享／撤權 smoke。登入後操作、遠端 migration／授權行為與部署 commit 尚未驗證；不宣稱遠端 smoke 或 #4 已完成。
+
+### Provider 啟用後複驗
+
+使用者確認 provider 已啟用後，相同遠端 preflight **5 項 PASS**。首次真實 OAuth 返回另一個部署 alias 的首頁，未完成產品 callback；Dashboard 確認 allow list 缺少本次驗收 origin。經使用者明確批准，新增精確的 `https://editor-one-topaz.vercel.app/auth/callback`，保留既有 Site URL 與其餘 allow list，Dashboard 顯示新增成功。再次由產品入口進行 GitHub OAuth，成功返回原 origin 的 `/documents`，顯示已登入文件入口及協作邀請 ID；沒有匯出 session 或保存 OAuth code。
+
+接著嘗試建立 `S1 remote smoke 2026-11-05`，正式頁面顯示「建立失敗，請再試一次」。以 Dashboard SQL Editor 執行唯讀 `to_regclass` 查詢，`public.documents`、`private.document_shares`、`private.document_editors` 均為 NULL，確認遠端尚缺 S1 資料表。六份 migrations 的一次性 transaction bundle 已準備，待取得使用者的資料庫授權變更確認後套用。此時文件保存、分享／撤權仍未通過。
+
+### Migration 套用與單帳號遠端 smoke 完成（2026-11-05）
+
+使用者明確確認後，在 `editor-s1-test` 的 Dashboard SQL Editor 一次執行六份 S1 migrations（001–006），包在同一筆 `begin`／`commit` transaction。貼入內容經移除註解及空白後與本機已驗證 bundle 的長度及指紋一致，另以 editor 全選複製確認完整內容未截斷；執行結果為 `Success. No rows returned.`。此為 Dashboard 手動套用紀錄，不表示 Supabase CLI migration history 已同步；後續 migration 前先核對資料庫狀態，不重跑初始 bundle。
+
+收尾唯讀查詢確認三個目標表皆已存在，`public.documents.relrowsecurity = true`。SQL Editor 已換成唯讀驗證查詢，避免誤重跑初始 bundle。套用後再次執行相同遠端 preflight，**5 項 PASS、exit 0**。
+
+部署證據：Vercel Project Overview 顯示 `editor-one-topaz.vercel.app` 對應 Ready deployment [`FrfjcnzevPj8HL8MSBqNwxLqVfpw`](https://vercel.com/gracecheng0329s-projects/editor/FrfjcnzevPj8HL8MSBqNwxLqVfpw)，來源為 `main` commit `2ed6f062f9262d7b9c15802075c81564c27b63b5`，部署 hostname 為 `editor-nosmjfk0g-gracecheng0329s-projects.vercel.app`。以下操作均使用使用者指定的產品 origin `https://editor-one-topaz.vercel.app`，Auth origin 為 `https://gnmaayjhlnrlqcpxkjjw.supabase.co`。
+
+| 情境 | 實際結果 |
+| --- | --- |
+| 真實 GitHub OAuth | 返回原產品 `/documents` 並取得有效登入；後續再次登入同一帳號亦成功，未匯出或重建 session |
+| 建立、列出及開啟文件 | migration 前建立失敗，套用後同一旅程成功；文件清單出現測試文件，開啟顯示擁有者 |
+| 改名及重新載入 | 改為 `S1 remote smoke 2026-11-05 — 已改名`，顯示保存成功，真正 reload 後仍保留 |
+| 分享輪替 | 由 UI 產生兩次觀看連結，兩份連結不同；登出後開啟舊連結顯示「分享連結無效或已撤銷。」 |
+| 匿名觀看 | 登出後載入新連結，顯示正確標題與「觀看者・唯讀」，無標題／權限管理操作 |
+| 分享撤銷 | 重新以 owner 登入並撤銷，顯示尚未啟用；owner reload 仍可開啟文件 |
+| 撤銷後匿名存取 | 再次登出，載入剛撤銷的連結顯示「分享連結無效或已撤銷。」且無文件標題 |
+| 登出後私密存取 | 登出後直接重開原文件顯示「請先登入。」；匿名私密 API 的 401 另由 preflight 覆蓋 |
+
+匿名情境使用同一瀏覽器完成產品登出後實測，沒有持有產品登入資格；本次並非多個獨立 browser contexts 同時操作。測試文件保留在遠端 owner 私密清單，分享已撤銷，未新增 editor。完整分享 token 只在操作記憶體使用，不寫入本紀錄；截圖僅含測試內容。
+
+![遠端 owner 在分享撤銷後重載仍可存取](images/s1-remote-owner-2026-11-05.jpg)
+
+![匿名持已撤銷連結時拒絕存取](images/s1-remote-revoked-2026-11-05.jpg)
+
+本輪完成單一真實帳號的遠端登入／文件／匿名分享／輪替／撤銷／登出 smoke。第二個真實 GitHub 帳號的 editor 邀請、禁止管理、撤權與持連結降為 viewer，仍因缺少第二帳號而未驗證；本機獨立測試身分的既有結果不能替代它。因此 #4 保持開啟。畫布與既有連線撤權仍屬後續切片。本輪未修改產品程式，不重跑本機產品測試、lint、型別或 build，亦不將它們改記為本輪通過。
