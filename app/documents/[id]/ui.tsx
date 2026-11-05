@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { AccessSettings } from './access';
+import { DocumentCanvas } from './canvas';
 type Document = { title: string; role: 'owner' | 'editor' };
 export function DocumentShell({ id }: { id: string }) {
   const [document, setDocument] = useState<Document | null>(null);
@@ -23,5 +24,5 @@ export function DocumentShell({ id }: { id: string }) {
       const value: Document = await response.json(); setDocument({ ...value, role: 'owner' }); setTitle(value.title); setSaved(true);
     } catch { setError('儲存失敗，請再試一次。'); }
   }
-  return <section className="document-content">{error && <p role="alert" className="notice">{error} {!document && <button className="plain-button" onClick={() => void load()}>重試</button>}</p>}{document && <><p className="eyebrow">{document.role === 'owner' ? '擁有者' : '編輯者'}</p><h1>{document.title}</h1>{document.role === 'owner' && <><form onSubmit={rename} className="document-form"><label htmlFor="rename">文件標題</label><div><input id="rename" value={title} onChange={e => { setTitle(e.target.value); setSaved(false); }} /><button className="primary-button">儲存標題</button></div></form>{saved && <p role="status">標題已儲存。</p>}<AccessSettings id={id} /></>}<div className="canvas-placeholder"><strong>畫布</strong><p>畫布功能正在準備中。</p></div></>}</section>;
+  return <section className="document-content">{error && <p role="alert" className="notice">{error} {!document && <button className="plain-button" onClick={() => void load()}>重試</button>}</p>}{document && <><p className="eyebrow">{document.role === 'owner' ? '擁有者' : '編輯者'}</p><h1>{document.title}</h1>{document.role === 'owner' && <><form onSubmit={rename} className="document-form"><label htmlFor="rename">文件標題</label><div><input id="rename" value={title} onChange={e => { setTitle(e.target.value); setSaved(false); }} /><button className="primary-button">儲存標題</button></div></form>{saved && <p role="status">標題已儲存。</p>}<AccessSettings id={id} /></>}<DocumentCanvas id={id} /></>}</section>;
 }
