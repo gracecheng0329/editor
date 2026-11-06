@@ -6,7 +6,7 @@
       "dev": "next dev",
       "build": "next build",
       "start": "next start",
-      "lint": "eslint . --max-warnings=0",
+      "lint": "biome lint . --error-on-warnings",
       "test:s1": "playwright test --config playwright.s1.config.ts",
       "db:migrate:local": "node scripts/migrate-local-supabase.mjs",
       "test:g0": "playwright test --config playwright.g0.config.ts"

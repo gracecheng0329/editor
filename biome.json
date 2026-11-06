@@ -7,7 +7,7 @@
    },
    "files": {
       "ignoreUnknown": false,
-      "includes": ["**", "!!**/dist", "!!**/build", "!!.agents", "!!**/*.{md, yml}"]
+      "includes": ["**", "!!**/dist", "!!**/build", "!!.agents", "!!**/*.{md, yml, yaml, json}"]
    },
    "formatter": {
       "enabled": true,
@@ -35,6 +35,11 @@
          "source": {
             "organizeImports": "on"
          }
+      }
+   },
+   "css": {
+      "parser": {
+         "tailwindDirectives": true
       }
    }
 }
