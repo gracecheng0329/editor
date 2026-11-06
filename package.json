@@ -1,43 +1,41 @@
 {
-  "name": "editor",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint . --max-warnings=0",
-    "test:s1": "playwright test --config playwright.s1.config.ts",
-    "db:migrate:local": "node scripts/migrate-local-supabase.mjs",
-    "test:g0": "playwright test --config playwright.g0.config.ts"
-  },
-  "dependencies": {
-    "@supabase/ssr": "0.12.7",
-    "@supabase/supabase-js": "2.118.0",
-    "@tldraw/sync": "5.5.2",
-    "@tldraw/sync-core": "5.5.2",
-    "@tldraw/tlschema": "5.5.2",
-    "lucide-react": "^0.577.0",
-    "next": "16.4.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "tldraw": "5.5.2",
-    "@tldraw/validate": "5.5.2"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0",
-    "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.0.0",
-    "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "esbuild": "^0.25.0",
-    "eslint": "10.12.0",
-    "eslint-config-next": "16.4.0",
-    "miniflare": "^4.0.0",
-    "tailwindcss": "^4",
-    "typescript": "^5"
-  },
-  "packageManager": "pnpm@11.18.0"
+   "name": "editor",
+   "version": "0.1.0",
+   "private": true,
+   "scripts": {
+      "dev": "next dev",
+      "build": "next build",
+      "start": "next start",
+      "lint": "eslint . --max-warnings=0",
+      "test:s1": "playwright test --config playwright.s1.config.ts",
+      "db:migrate:local": "node scripts/migrate-local-supabase.mjs",
+      "test:g0": "playwright test --config playwright.g0.config.ts"
+   },
+   "dependencies": {
+      "@supabase/ssr": "0.12.7",
+      "@supabase/supabase-js": "2.118.0",
+      "@tldraw/sync": "5.5.2",
+      "@tldraw/sync-core": "5.5.2",
+      "@tldraw/tlschema": "5.5.2",
+      "@tldraw/validate": "5.5.2",
+      "lucide-react": "^0.577.0",
+      "next": "16.4.0",
+      "react": "19.3.0",
+      "react-dom": "19.3.0",
+      "tldraw": "5.5.2"
+   },
+   "devDependencies": {
+      "@biomejs/biome": "2.6.5",
+      "@cloudflare/workers-types": "^4.0.0",
+      "@playwright/test": "^1.0.0",
+      "@tailwindcss/turbopack": "^4",
+      "@types/node": "^20",
+      "@types/react": "^19",
+      "@types/react-dom": "^19",
+      "esbuild": "^0.25.0",
+      "miniflare": "^4.0.0",
+      "tailwindcss": "^4",
+      "typescript": "^5"
+   },
+   "packageManager": "pnpm@11.18.0"
 }
