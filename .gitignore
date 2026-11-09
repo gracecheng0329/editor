@@ -18,8 +18,10 @@
 /.next/
 /.next-g0/
 /.next-s1/
+/.next-s2-remote/
 /test-results/
 /playwright-report/
+/.s2-remote/
 /out/
 
 # production

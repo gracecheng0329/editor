@@ -3,6 +3,7 @@ export const instant = false
 import Link from 'next/link'
 import { connection } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { userDisplayName } from '@/lib/user-display-name'
 import { DocumentList } from './ui'
 
 export default async function Documents({
@@ -48,9 +49,13 @@ export default async function Documents({
                <p role='alert'>服務暫時無法使用，請重新整理再試。</p>
             ) : user ? (
                <>
-                  <label htmlFor='invitation-id'>協作邀請 ID</label>
-                  <input id='invitation-id' value={user.id} readOnly />
-                  <p>將此 ID 複製給文件擁有者，即可邀請已完成 GitHub 登入的你成為編輯者。</p>
+                  <p>已登入：{userDisplayName(user)}</p>
+                  <details>
+                     <summary>協作邀請</summary>
+                     <label htmlFor='invitation-id'>協作邀請 ID</label>
+                     <input id='invitation-id' value={user.id} readOnly />
+                     <p>將此 ID 複製給文件擁有者，即可邀請已完成 GitHub 登入的你成為編輯者。</p>
+                  </details>
                   <DocumentList />
                </>
             ) : (

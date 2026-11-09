@@ -174,6 +174,7 @@ const worker = {
 export default worker
 
 export class CanvasRoom extends DurableObject<Env> {
+   private readonly instanceId = crypto.randomUUID()
    private room: TLSocketRoom<TLRecord>
    private sqlite: SQLiteSyncStorage<TLRecord>
    constructor(ctx: DurableObjectState, env: Env) {
@@ -203,6 +204,7 @@ export class CanvasRoom extends DurableObject<Env> {
          const store = Object.fromEntries(captured.documents.map(({ state }) => [state.id, state]))
          await this.ctx.storage.sync()
          return Response.json({
+            instanceId: this.instanceId,
             generation,
             revision: captured.documentClock ?? 0,
             snapshot: { store, schema: captured.schema },

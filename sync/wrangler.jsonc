@@ -6,8 +6,8 @@
    "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "CanvasRoom" }] },
    "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CanvasRoom"] }],
    "vars": {
-      "APP_ORIGIN": "https://REPLACE-WITH-APP-HOST",
-      "SUPABASE_URL": "https://REPLACE-WITH-PROJECT.supabase.co"
+      "APP_ORIGIN": "https://editor-gracecheng0329s-projects.vercel.app",
+      "SUPABASE_URL": "https://gnmaayjhlnrlqcpxkjjw.supabase.co"
    },
    "observability": { "enabled": false }
 }
