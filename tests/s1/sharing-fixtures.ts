@@ -14,10 +14,15 @@ export const admin = createClient(url, credentials.serviceKey, { auth: { persist
 
 // Trusted provider fixtures exist only in the local test database. Password
 // sessions are real Auth sessions; this does not simulate the OAuth smoke test.
-export async function registeredUser(github = true) {
+export async function registeredUser(github = true, displayName = `GitHub ${randomUUID()}`) {
    const email = `${randomUUID()}@example.test`
    const password = randomUUID()
-   const created = await admin.auth.admin.createUser({ email, password, email_confirm: true })
+   const created = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: displayName },
+   })
    if (created.error || !created.data.user) throw new Error('Could not create test identity')
    const id = created.data.user.id
    try {
@@ -58,6 +63,7 @@ export async function registeredUser(github = true) {
       if (signin.error) throw new Error(`Could not sign in test identity: ${signin.error.message}`)
       return {
          id,
+         displayName,
          client,
          headers: { cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; ') },
          browserCookies: () =>

@@ -1668,6 +1668,17 @@ kbd {
    font-size: 1.3rem;
    text-decoration: none;
 }
+.account-actions {
+   display: flex;
+   align-items: center;
+   gap: 12px;
+   overflow-wrap: anywhere;
+}
+.invitation-id {
+   display: block;
+   overflow-wrap: anywhere;
+   user-select: all;
+}
 .hero {
    max-width: 720px;
    padding: 120px 0 100px;

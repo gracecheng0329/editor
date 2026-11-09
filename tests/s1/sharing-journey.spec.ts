@@ -16,7 +16,10 @@ test('owner invites an editor and shares with an anonymous viewer through separa
       const ownerPage = await ownerContext.newPage()
       const editorPage = await editorContext.newPage()
       await editorPage.goto('/documents')
-      await expect(editorPage.getByLabel('協作邀請 ID', { exact: true })).toHaveValue(editor.id)
+      await expect(editorPage.getByText(editor.id, { exact: true })).toBeVisible()
+      await expect(editorPage.locator('nav .account-actions:visible')).toHaveText(
+         `${editor.displayName}登出`,
+      )
       await ownerPage.goto('/documents')
       await ownerPage.getByLabel('新文件標題').fill('Shared browser architecture')
       await ownerPage.getByRole('button', { name: '建立文件' }).click()
@@ -31,8 +34,18 @@ test('owner invites an editor and shares with an anonymous viewer through separa
       expect(ownerRead.status()).toBe(200)
       await expect(ownerPage.getByText('擁有者', { exact: true })).toBeVisible()
       const docURL = ownerPage.url()
+      await expect(ownerPage.locator('nav .account-actions:visible')).toHaveText(
+         `${owner.displayName}登出`,
+      )
       await ownerPage.getByLabel('編輯者的協作邀請 ID').fill(editor.id)
+      const invitation = ownerPage.waitForRequest(
+         (request) =>
+            new URL(request.url()).pathname === `/api/docs/${docURL.split('/').pop()}/editors` &&
+            request.method() === 'POST',
+      )
       await ownerPage.getByRole('button', { name: '授予編輯資格' }).click()
+      expect((await invitation).postDataJSON()).toEqual({ userId: editor.id })
+      await expect(ownerPage.getByText(editor.displayName, { exact: true })).toBeVisible()
       await expect(ownerPage.getByText(editor.id, { exact: true })).toBeVisible()
       await editorPage.reload()
       await editorPage.getByRole('link', { name: 'Shared browser architecture' }).click()
@@ -51,7 +64,7 @@ test('owner invites an editor and shares with an anonymous viewer through separa
       await expect(viewer.getByText('觀看者・唯讀', { exact: true })).toBeVisible()
       await expect(viewer.getByRole('button', { name: '儲存標題' })).toHaveCount(0)
       await ownerPage.getByRole('button', { name: '撤銷編輯資格' }).click()
-      await expect(ownerPage.getByText(editor.id, { exact: true })).toHaveCount(0)
+      await expect(ownerPage.getByText(editor.displayName, { exact: true })).toHaveCount(0)
       await editorPage.reload()
       await expect(editorPage.getByRole('alert').filter({ hasText: '找不到文件' })).toBeVisible()
       await editorPage.goto(link)

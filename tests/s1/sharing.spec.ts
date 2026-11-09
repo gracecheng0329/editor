@@ -79,7 +79,7 @@ test('owner grants a registered GitHub identity editor access; editor cannot man
       )
       expect(grants.map((value) => value.status())).toEqual([200, 200])
       const listed = await (await request.get(path, { headers: owner.headers })).json()
-      expect(listed.editors).toEqual([{ user_id: editor.id }])
+      expect(listed.editors).toEqual([{ user_id: editor.id, display_name: editor.displayName }])
       expect(
          (await (await request.get(`/api/documents/${doc.id}`, { headers: editor.headers })).json())
             .role,

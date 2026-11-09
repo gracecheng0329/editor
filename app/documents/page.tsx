@@ -30,7 +30,8 @@ export default async function Documents({
                ◈ Archly
             </Link>
             {user && (
-               <form action='/auth/logout' method='post'>
+               <form action='/auth/logout' method='post' className='account-actions'>
+                  <span>{userDisplayName(user)}</span>
                   <button type='submit' className='plain-button'>
                      登出
                   </button>
@@ -49,13 +50,9 @@ export default async function Documents({
                <p role='alert'>服務暫時無法使用，請重新整理再試。</p>
             ) : user ? (
                <>
-                  <p>已登入：{userDisplayName(user)}</p>
-                  <details>
-                     <summary>協作邀請</summary>
-                     <label htmlFor='invitation-id'>協作邀請 ID</label>
-                     <input id='invitation-id' value={user.id} readOnly />
-                     <p>將此 ID 複製給文件擁有者，即可邀請已完成 GitHub 登入的你成為編輯者。</p>
-                  </details>
+                  <p>協作邀請 ID</p>
+                  <code className='invitation-id'>{user.id}</code>
+                  <p>複製完整 ID 給文件擁有者，即可邀請你成為編輯者。</p>
                   <DocumentList />
                </>
             ) : (

@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 
-type Settings = { enabled: boolean; editors: { user_id: string }[] }
+type Settings = { enabled: boolean; editors: { user_id: string; display_name: string }[] }
 export function AccessSettings({ id }: { id: string }) {
    const [settings, setSettings] = useState<Settings | null>(null)
    const [userId, setUserId] = useState('')
@@ -9,11 +9,12 @@ export function AccessSettings({ id }: { id: string }) {
    const [error, setError] = useState('')
    const [busy, setBusy] = useState(false)
    const path = `/api/documents/${encodeURIComponent(id)}`
+   const editorsPath = `/api/docs/${encodeURIComponent(id)}/editors`
    const load = useCallback(async () => {
-      const response = await fetch(`${path}/editors`, { cache: 'no-store' })
+      const response = await fetch(editorsPath, { cache: 'no-store' })
       if (!response.ok) throw new Error('無法載入存取設定，請再試一次。')
       setSettings(await response.json())
-   }, [path])
+   }, [editorsPath])
    useEffect(() => {
       void Promise.resolve()
          .then(load)
@@ -25,10 +26,10 @@ export function AccessSettings({ id }: { id: string }) {
       try {
          let endpoint: string
          if (action === 'share' || action === 'disable') endpoint = `${path}/share`
-         else if (action === 'invite') endpoint = `${path}/editors`
+         else if (action === 'invite') endpoint = editorsPath
          else {
             if (!editorId) throw new Error('缺少編輯者 ID。')
-            endpoint = `${path}/editors/${encodeURIComponent(editorId)}`
+            endpoint = `${editorsPath}/${encodeURIComponent(editorId)}`
          }
          const response = await fetch(endpoint, {
             method: action === 'disable' || action === 'revoke' ? 'DELETE' : 'POST',
@@ -38,7 +39,7 @@ export function AccessSettings({ id }: { id: string }) {
          if (!response.ok)
             throw new Error(
                response.status === 422
-                  ? '無法邀請，請確認對方已完成 GitHub 登入，並貼上正確的協作邀請 ID。'
+                  ? '無法邀請，請確認對方已完成 GitHub 登入，並貼上「我的文件」顯示的完整協作邀請 ID。'
                   : '操作未完成，請再試一次。',
             )
          if (action === 'share') {
@@ -118,11 +119,13 @@ export function AccessSettings({ id }: { id: string }) {
                   }}
                >
                   <label htmlFor='editor-invite'>編輯者的協作邀請 ID</label>
-                  <p>請對方完成 GitHub 登入，從「我的文件」複製自己的協作邀請 ID。</p>
+                  <p>請對方完成 GitHub 登入，從「我的文件」複製完整的協作邀請 ID。</p>
                   <div>
                      <input
                         id='editor-invite'
                         value={userId}
+                        maxLength={36}
+                        required
                         onChange={(event) => setUserId(event.target.value)}
                      />
                      <button type='submit' className='primary-button' disabled={busy}>
@@ -133,7 +136,8 @@ export function AccessSettings({ id }: { id: string }) {
                <ul>
                   {settings.editors.map((editor) => (
                      <li key={editor.user_id}>
-                        <span>{editor.user_id}</span>{' '}
+                        <span>{editor.display_name}</span>{' '}
+                        <code className='invitation-id'>{editor.user_id}</code>
                         <button
                            type='button'
                            className='plain-button'
