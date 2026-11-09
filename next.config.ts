@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
       },
    },
    experimental: {
+      agentUpgrade: 'security',
       // reactCompiler: true,
       // turbopackFileSystemCache: true,
       optimizePackageImports: ['lucide-react'],
