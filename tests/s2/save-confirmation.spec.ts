@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { expect, type Route, test } from '@playwright/test'
 import { registeredUser } from '../s1/sharing-fixtures'
+import { openObjectPanel } from './canvas-fixtures'
 
 test('automatic confirmation never treats old responses or failed requests as saved and retries without losing nodes', async ({
    browser,
@@ -19,6 +20,7 @@ test('automatic confirmation never treats old responses or failed requests as sa
       const document = await creation.json()
       const page = await context.newPage()
       await page.goto(`/documents/${document.id}`)
+      await openObjectPanel(page)
       await expect(page.getByLabel('保存狀態')).toHaveText('已確認持久化')
       // Hold a genuine old authoritative response; the sync service still processes
       // actual node edits. No SDK state or WebSocket payload is mocked.
@@ -48,6 +50,7 @@ test('automatic confirmation never treats old responses or failed requests as sa
       await page.getByRole('button', { name: '重試保存', exact: true }).click()
       await expect(page.getByLabel('保存狀態')).toHaveText('已確認持久化')
       await page.reload()
+      await openObjectPanel(page)
       await expect(page.getByLabel('畫布節點')).toContainText('First revision')
       await expect(page.getByLabel('畫布節點')).toContainText('Later revision')
    } finally {

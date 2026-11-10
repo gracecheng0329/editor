@@ -1,5 +1,6 @@
 import { expect, test, type WebSocketRoute } from '@playwright/test'
 import { registeredUser } from '../s1/sharing-fixtures'
+import { openObjectPanel } from './canvas-fixtures'
 
 test('live canvas retains pending edits while offline and automatically confirms after reconnect', async ({
    browser,
@@ -28,6 +29,7 @@ test('live canvas retains pending edits while offline and automatically confirms
       expect(creation.status()).toBe(201)
       const document = await creation.json()
       await page.goto(`/documents/${document.id}`)
+      await openObjectPanel(page)
       await expect(page.getByLabel('保存狀態')).toHaveText('已確認持久化')
       offline = true
       await context.setOffline(true)
@@ -41,6 +43,7 @@ test('live canvas retains pending edits while offline and automatically confirms
       await context.setOffline(false)
       await expect(page.getByLabel('保存狀態')).toHaveText('已確認持久化', { timeout: 15000 })
       await page.reload()
+      await openObjectPanel(page)
       await expect(page.getByLabel('畫布節點')).toContainText('Pending service')
    } finally {
       await context.close()

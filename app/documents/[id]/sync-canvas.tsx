@@ -1,6 +1,6 @@
 'use client'
 import { useSync } from '@tldraw/sync'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
    atom,
    createUserId,
@@ -17,6 +17,16 @@ import {
    architectureShapeUtils,
 } from '@/app/web/whiteboard/architecture-shape'
 import 'tldraw/tldraw.css'
+import { SyncedWorkspaceUi, WorkspaceUnavailable } from '@/app/web/whiteboard/workspace-ui'
+import { syncedBindingUtils } from './arrow-binding'
+import { ObjectTools } from './object-tools'
+
+export type DocumentWorkspace = {
+   heading: ReactNode
+   onShare: () => void
+   userName: string
+   isSharing: boolean
+}
 
 const assets = {
    upload: async (): Promise<never> => {
@@ -33,7 +43,9 @@ type Checkpoint = {
 function CanvasControls({
    connectionStatus,
    confirm,
+   workspace,
 }: {
+   workspace: DocumentWorkspace
    connectionStatus: string
    confirm: (signal: AbortSignal) => Promise<Checkpoint>
 }) {
@@ -91,95 +103,111 @@ function CanvasControls({
       }
    }, [connectionStatus, confirmed, canvasRecords, confirm, retry])
    return (
-      <section className='canvas-controls' aria-label='節點工具'>
-         <ul aria-label='協作者'>
-            {collaborators.map((peer) => (
-               <li key={peer.id}>{peer.userName}</li>
-            ))}
-         </ul>
-         <output aria-label='同步狀態'>{connectionStatus === 'online' ? '已連線' : '離線'}</output>
-         <output aria-label='保存狀態'>
-            {connectionStatus !== 'online'
-               ? '離線／待同步'
-               : error
-                 ? '保存失敗／待同步'
-                 : confirmed
-                   ? '已確認持久化'
-                   : '尚未確認保存'}
-         </output>
-         {error && (
-            <button type='button' onClick={() => setRetry((value) => value + 1)}>
-               重試保存
-            </button>
-         )}
-         <label>
-            新增節點名稱
-            <input
-               aria-label='新增節點名稱'
-               value={name}
-               onChange={(event) => setName(event.target.value)}
-            />
-         </label>
-         <button
-            type='button'
-            onClick={() =>
-               editor.createShape<ArchitectureNode>({
-                  type: 'architecture-node',
-                  x: 100,
-                  y: 180,
-                  props: { title: name },
-               })
-            }
-         >
-            新增節點
-         </button>
-         {selected && (
+      <SyncedWorkspaceUi
+         isSharing={workspace.isSharing}
+         userName={workspace.userName}
+         heading={workspace.heading}
+         onShare={workspace.onShare}
+         collaborators={collaborators.map((peer) => ({
+            id: peer.id,
+            name: peer.userName,
+            color: peer.color,
+         }))}
+         status={
             <>
+               <output aria-label='同步狀態'>
+                  {connectionStatus === 'online' ? '已連線' : '離線'}
+               </output>
+               <output aria-label='保存狀態'>
+                  {connectionStatus !== 'online'
+                     ? '離線／待同步'
+                     : error
+                       ? '保存失敗／待同步'
+                       : confirmed
+                         ? '已確認持久化'
+                         : '尚未確認保存'}
+               </output>
+               {error && (
+                  <button type='button' onClick={() => setRetry((value) => value + 1)}>
+                     重試保存
+                  </button>
+               )}
+            </>
+         }
+         tools={
+            <section className='canvas-controls' aria-label='節點工具'>
                <label>
-                  選取節點名稱
+                  新增節點名稱
                   <input
-                     aria-label='選取節點名稱'
-                     value={selected.props.title}
-                     onChange={(event) =>
-                        editor.updateShape<ArchitectureNode>({
-                           id: selected.id,
-                           type: selected.type,
-                           props: { title: event.target.value },
-                        })
-                     }
+                     aria-label='新增節點名稱'
+                     value={name}
+                     onChange={(event) => setName(event.target.value)}
                   />
                </label>
                <button
                   type='button'
                   onClick={() =>
-                     editor.updateShape({
-                        id: selected.id,
-                        type: selected.type,
-                        x: selected.x + 40,
+                     editor.createShape<ArchitectureNode>({
+                        type: 'architecture-node',
+                        x: 100 + (nodes.length % 3) * 280,
+                        y: 180 + Math.floor(nodes.length / 3) * 160,
+                        props: { title: name },
                      })
                   }
                >
-                  向右移動節點
+                  新增節點
                </button>
-               <button type='button' onClick={() => editor.deleteShapes([selected.id])}>
-                  刪除選取節點
-               </button>
-            </>
-         )}
-         <ul aria-label='畫布節點'>
-            {nodes.map((node) => (
-               <li key={node.id}>
-                  <button
-                     type='button'
-                     aria-label={`選取 ${node.props.title}`}
-                     onClick={() => editor.select(node.id)}
-                  >
-                     {node.props.title} (x:{Math.round(node.x)}, y:{Math.round(node.y)})
-                  </button>
-               </li>
-            ))}
-         </ul>
-      </section>
+               {selected && (
+                  <>
+                     <label>
+                        選取節點名稱
+                        <input
+                           aria-label='選取節點名稱'
+                           value={selected.props.title}
+                           onChange={(event) =>
+                              editor.updateShape<ArchitectureNode>({
+                                 id: selected.id,
+                                 type: selected.type,
+                                 props: { title: event.target.value },
+                              })
+                           }
+                        />
+                     </label>
+                     <button
+                        type='button'
+                        onClick={() =>
+                           editor.updateShape({
+                              id: selected.id,
+                              type: selected.type,
+                              x: selected.x + 40,
+                           })
+                        }
+                     >
+                        向右移動節點
+                     </button>
+                     <button type='button' onClick={() => editor.deleteShapes([selected.id])}>
+                        刪除選取節點
+                     </button>
+                  </>
+               )}
+               <ObjectTools />
+               <ul aria-label='畫布節點'>
+                  {nodes.map((node) => (
+                     <li key={node.id}>
+                        <button
+                           type='button'
+                           aria-label={`選取 ${node.props.title}`}
+                           onClick={() => editor.select(node.id)}
+                        >
+                           {node.props.title} (x:{Math.round(node.x)}, y:{Math.round(node.y)}){' '}
+                           {Math.round(node.props.w)} × {Math.round(node.props.h)}
+                        </button>
+                     </li>
+                  ))}
+               </ul>
+            </section>
+         }
+      />
    )
 }
 
@@ -188,7 +216,9 @@ function ConnectedCanvas({
    documentId,
    identity,
    onRetry,
+   workspace,
 }: {
+   workspace: DocumentWorkspace
    documentId: string
    identity: Identity
    onRetry: () => void
@@ -249,10 +279,10 @@ function ConnectedCanvas({
       },
       [roomURL],
    )
-   const store = useSync({ uri, assets, shapeUtils, users })
+   const store = useSync({ uri, assets, shapeUtils, bindingUtils: syncedBindingUtils, users })
    if (store.status !== 'synced-remote')
       return (
-         <div>
+         <WorkspaceUnavailable {...workspace}>
             <p role='status'>
                {store.status === 'error' ? '同步連線失敗，請重試。' : '正在連接同步服務…'}
             </p>
@@ -261,18 +291,36 @@ function ConnectedCanvas({
                   重新連線
                </button>
             )}
-         </div>
+         </WorkspaceUnavailable>
       )
    return (
-      <section className='document-canvas' aria-label='文件畫布'>
-         <Tldraw store={store} shapeUtils={shapeUtils} hideUi>
-            <CanvasControls connectionStatus={store.connectionStatus} confirm={confirm} />
+      <section className='whiteboard-app document-workspace' aria-label='文件畫布'>
+         <Tldraw
+            store={store}
+            shapeUtils={shapeUtils}
+            bindingUtils={syncedBindingUtils}
+            hideUi
+            onMount={(editor) => {
+               editor.updateInstanceState({ isGridMode: true })
+            }}
+         >
+            <CanvasControls
+               workspace={workspace}
+               connectionStatus={store.connectionStatus}
+               confirm={confirm}
+            />
          </Tldraw>
       </section>
    )
 }
 
-export default function SyncCanvas({ documentId }: { documentId: string }) {
+export default function SyncCanvas({
+   documentId,
+   workspace,
+}: {
+   documentId: string
+   workspace: DocumentWorkspace
+}) {
    const [attempt, setAttempt] = useState(0)
    const [identity, setIdentity] = useState<Identity | null>(null)
    const [failed, setFailed] = useState(false)
@@ -293,10 +341,15 @@ export default function SyncCanvas({ documentId }: { documentId: string }) {
          })
       return () => controller.abort()
    }, [documentId, attempt])
-   if (!process.env.NEXT_PUBLIC_SYNC_URL) return <p role='alert'>畫布同步服務尚未設定。</p>
+   if (!process.env.NEXT_PUBLIC_SYNC_URL)
+      return (
+         <WorkspaceUnavailable {...workspace}>
+            <p role='alert'>畫布同步服務尚未設定。</p>
+         </WorkspaceUnavailable>
+      )
    if (failed)
       return (
-         <div>
+         <WorkspaceUnavailable {...workspace}>
             <p role='status'>同步連線失敗，請重試。</p>
             <button
                type='button'
@@ -307,12 +360,18 @@ export default function SyncCanvas({ documentId }: { documentId: string }) {
             >
                重新連線
             </button>
-         </div>
+         </WorkspaceUnavailable>
       )
-   if (!identity) return <p role='status'>正在連接同步服務…</p>
+   if (!identity)
+      return (
+         <WorkspaceUnavailable {...workspace}>
+            <p role='status'>正在連接同步服務…</p>
+         </WorkspaceUnavailable>
+      )
    return (
       <ConnectedCanvas
          key={attempt}
+         workspace={workspace}
          identity={identity}
          documentId={documentId}
          onRetry={() => setAttempt((value) => value + 1)}

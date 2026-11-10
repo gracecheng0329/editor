@@ -2,7 +2,7 @@
 
 Archly 是以系統架構討論為目標的白板專案，使用 Next.js、React 與 tldraw 建立互動介面。目前已實作 GitHub 登入、私密文件中繼資料管理、觀看連結與編輯者授權；另提供可操作的本機白板原型，以及獨立的多人同步技術驗證環境。
 
-**產品文件頁的畫布仍是預留區。** 本機原型、G0 同步驗證與產品文件尚未整合成完整的多人協作白板。雲端畫布保存、產品留言、版本管理與既有同步連線撤權，均不能視為已完成。
+**正式文件畫布已使用 FigJam 風格介面。** 擁有者與編輯者可同步操作節點、有向連線及文字，並取得可靠保存確認；文件標題與分享權限沿用正式 API。筆畫與個人復原（S3）、留言（S4）、版本管理（S5）及既有連線撤權（#7）仍依各票驗收，不提前宣稱完整產品完成。
 
 ## 已實作功能與入口
 
@@ -10,7 +10,7 @@ Archly 是以系統架構討論為目標的白板專案，使用 Next.js、React
 | --- | --- | --- |
 | `/` | 產品介紹、GitHub 登入入口 | 經 Supabase Auth 完成登入 |
 | `/documents` | 建立文件、列出自己擁有及受邀的文件、取得協作邀請 ID | 需要登入；中繼資料保存於 Postgres |
-| `/documents/[id]` | 開啟文件、擁有者修改標題、管理觀看連結與編輯者 | 文件畫布尚未接入 |
+| `/documents/[id]` | FigJam 風格元件庫、浮動工具列、協作者與保存狀態；標題、分享與編輯者管理 | 正式 Auth／RLS、tldraw sync 與 Durable Object 保存；進階物件設定由右上按鈕開啟 |
 | `/share#<token>` | 匿名以有效觀看連結讀取文件標題及觀看者身分 | 尚無畫布閱讀；撤銷或輪替後，舊連結的新請求會被拒絕 |
 | `/prototype` | 本機架構白板 | 使用瀏覽器儲存，未連接產品文件或雲端同步 |
 | `/g0` | 畫布與同步技術驗證 | 僅開發模式且 `G0_ENABLED=1` 時開放；同步測試由測試工具提供票證與本機 Worker |
@@ -21,8 +21,14 @@ Archly 是以系統架構討論為目標的白板專案，使用 Next.js、React
 - 建立、列出、開啟私密文件；擁有者可修改標題並於重載後讀回。
 - 擁有者可產生、輪替及撤銷觀看連結；完整連結只在產生時顯示。
 - 已完成 GitHub 登入的使用者可從「我的文件」複製自己的協作邀請 ID，由擁有者授予或撤銷編輯資格。
-- 受邀編輯者可讀取文件，但不能管理標題、觀看連結或編輯者資格。這項身分目前尚未接上產品畫布編輯。
+- 受邀編輯者可讀取文件，但不能管理標題、觀看連結或編輯者資格。可在正式文件畫布共同編輯節點、連線及文字。
 - API 與資料庫 RLS／RPC 共同限制存取；分享連結不授予編輯資格。
+
+### 正式協作畫布
+
+正式頁面與 `/prototype` 共用浮動介面、架構元件庫、工具列和縮放控制。正式頁面的標題、權限、協作者及保存狀態來自實際服務；不會讀取原型的本機標題、留言、里程碑或示範畫布。右上「物件與連線」開啟座標、尺寸、連線端點與標籤設定；留言和版本面板明示待交付。
+
+詳見 [介面整合驗證](docs/verification/formal-workspace.md)。
 
 ### 本機白板原型
 
@@ -38,15 +44,15 @@ G0 已有本機測試覆蓋 SDK 掛載、觀看者服務端拒寫、同世代離
 
 | 層次 | 技術 | 目前用途 |
 | --- | --- | --- |
-| Web 應用程式 | Next.js 16.4.0 App Router、React 19.3.0、TypeScript | 產品頁面、Route Handlers、OAuth callback 與 session 更新 |
-| 畫布 | tldraw 5.5.2 | 本機白板、自訂架構節點及 G0 畫布 |
-| 同步驗證 | `@tldraw/sync`、`@tldraw/sync-core`、`@tldraw/tlschema` 5.5.2 | G0 WebSocket 房間與同步協定 |
-| Worker runtime | Cloudflare Durable Objects SQLite、Miniflare、esbuild | G0 本機權威畫布、快照及世代驗證 |
+| Web 應用程式 | Next.js 16.4.5 App Router、React 19.3.0、TypeScript | 產品頁面、Route Handlers、OAuth callback 與 session 更新 |
+| 畫布 | tldraw 5.5.2 | 正式／本機白板、自訂架構節點及 G0 畫布 |
+| 同步驗證 | `@tldraw/sync`、`@tldraw/sync-core`、`@tldraw/tlschema` 5.5.2 | 正式文件及 G0 的 WebSocket 房間與同步協定 |
+| Worker runtime | Cloudflare Durable Objects SQLite、Miniflare、esbuild | 正式權威畫布、可靠保存及 G0 世代驗證 |
 | 身分與產品資料 | Supabase Auth、Postgres、`@supabase/ssr` | GitHub 登入、文件中繼資料、RLS 與分享／編輯者 RPC |
 | 樣式與圖示 | Tailwind CSS 4、CSS、Lucide React | 白板與產品介面 |
-| 驗證 | Playwright、Node.js test runner、ESLint、TypeScript | 瀏覽器旅程、API／RLS 整合及工具測試 |
+| 驗證 | Playwright、Node.js test runner、Biome、TypeScript | 瀏覽器旅程、API／RLS 整合及工具測試 |
 
-架構決策採用單一畫布同步引擎，並分開畫布與產品資料的權威來源。正式整合的目標分工見 [ADR](docs/ADR/README.md)；目前 Durable Object 僅用於 G0，本機 Supabase 環境未提供 Realtime、Storage 或 Edge Functions。
+架構決策採用單一畫布同步引擎，並分開畫布與產品資料的權威來源。正式整合的目標分工見 [ADR](docs/ADR/README.md)；Durable Object 已用於正式畫布與 G0，本機 Supabase 環境未提供 Realtime、Storage 或 Edge Functions。
 
 主要目錄：
 

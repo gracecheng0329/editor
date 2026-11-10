@@ -1,14 +1,17 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
+import { ModalFrame } from '@/app/web/whiteboard/workspace-surfaces'
 import { AccessSettings } from './access'
 import { DocumentCanvas } from './canvas'
 
 type Document = { title: string; role: 'owner' | 'editor' }
-export function DocumentShell({ id }: { id: string }) {
+export function DocumentShell({ id, userName }: { id: string; userName: string }) {
    const [document, setDocument] = useState<Document | null>(null)
    const [title, setTitle] = useState('')
    const [error, setError] = useState('')
    const [saved, setSaved] = useState(false)
+   const [sharing, setSharing] = useState(false)
+   const closeSharing = useCallback(() => setSharing(false), [])
    const load = useCallback(async () => {
       try {
          const response = await fetch(`/api/documents/${encodeURIComponent(id)}`, {
@@ -59,47 +62,78 @@ export function DocumentShell({ id }: { id: string }) {
          setError('儲存失敗，請再試一次。')
       }
    }
-   return (
-      <section className='document-content'>
-         {error && (
-            <p role='alert' className='notice'>
-               {error}{' '}
-               {!document && (
-                  <button type='button' className='plain-button' onClick={() => void load()}>
-                     重試
-                  </button>
+   if (!document)
+      return (
+         <main className='product-page'>
+            <a href='/documents'>← 我的文件</a>
+            <section className='document-content'>
+               {error ? (
+                  <p role='alert'>
+                     {error}{' '}
+                     <button type='button' onClick={() => void load()}>
+                        重試
+                     </button>
+                  </p>
+               ) : (
+                  <p role='status'>正在載入文件…</p>
                )}
-            </p>
-         )}
-         {document && (
-            <>
-               <p className='eyebrow'>{document.role === 'owner' ? '擁有者' : '編輯者'}</p>
-               <h1>{document.title}</h1>
-               {document.role === 'owner' && (
-                  <>
-                     <form onSubmit={rename} className='document-form'>
-                        <label htmlFor='rename'>文件標題</label>
-                        <div>
+            </section>
+         </main>
+      )
+   return (
+      <main className='formal-workspace'>
+         <DocumentCanvas
+            id={id}
+            workspace={{
+               isSharing: sharing,
+               userName,
+               heading: (
+                  <div className='document-heading'>
+                     {document.role === 'owner' ? (
+                        <form onSubmit={rename} className='workspace-title-form'>
                            <input
-                              id='rename'
+                              aria-label='文件標題'
                               value={title}
-                              onChange={(e) => {
-                                 setTitle(e.target.value)
+                              maxLength={200}
+                              onChange={(event) => {
+                                 setTitle(event.target.value)
                                  setSaved(false)
                               }}
                            />
-                           <button type='submit' className='primary-button'>
-                              儲存標題
+                           <button
+                              type='submit'
+                              aria-label='儲存標題'
+                              title='儲存標題'
+                              disabled={title === document.title}
+                           >
+                              儲存
                            </button>
-                        </div>
-                     </form>
-                     {saved && <p role='status'>標題已儲存。</p>}
+                        </form>
+                     ) : (
+                        <h1>{document.title}</h1>
+                     )}
+                     <span>
+                        <span>{document.role === 'owner' ? '擁有者' : '編輯者'}</span> ·
+                        私密協作文件
+                     </span>
+                     {saved && <output aria-label='標題儲存結果'>標題已儲存。</output>}
+                     {error && <p role='alert'>{error}</p>}
+                  </div>
+               ),
+               onShare: () => setSharing(true),
+            }}
+         />
+         {sharing && (
+            <ModalFrame title='分享與編輯者' onClose={closeSharing}>
+               <div className='share-modal-body'>
+                  {document.role === 'owner' ? (
                      <AccessSettings id={id} />
-                  </>
-               )}
-               <DocumentCanvas id={id} />
-            </>
+                  ) : (
+                     <p>你具有編輯資格；分享與編輯者權限由擁有者管理。</p>
+                  )}
+               </div>
+            </ModalFrame>
          )}
-      </section>
+      </main>
    )
 }

@@ -40,7 +40,15 @@ import {
    Users,
    X,
 } from 'lucide-react'
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import {
+   type Dispatch,
+   type ReactNode,
+   type SetStateAction,
+   useCallback,
+   useEffect,
+   useRef,
+   useState,
+} from 'react'
 import {
    createShapeId,
    DefaultColorStyle,
@@ -58,6 +66,7 @@ import {
    type NodeKind,
 } from './architecture-shape'
 import { INITIAL_SERVICE_ID } from './seed'
+import { ModalFrame } from './workspace-surfaces'
 
 type Message = { id: string; body: string; author: string; time: string }
 type Thread = {
@@ -145,84 +154,7 @@ function IconButton({
    )
 }
 
-function ModalFrame({
-   title,
-   onClose,
-   children,
-   wide = false,
-}: {
-   title: string
-   onClose: () => void
-   children: ReactNode
-   wide?: boolean
-}) {
-   const closeRef = useRef<HTMLButtonElement>(null)
-   useEffect(() => {
-      const previous = document.activeElement
-      closeRef.current?.focus()
-      const onKey = (event: KeyboardEvent) => {
-         if (event.key === 'Escape') {
-            event.preventDefault()
-            event.stopPropagation()
-            onClose()
-         }
-         if (event.key === 'Tab') {
-            const items = closeRef.current
-               ?.closest('[role="dialog"]')
-               ?.querySelectorAll<HTMLElement>(
-                  'button:not(:disabled), input:not(:disabled), textarea, a[href], [tabindex="0"]',
-               )
-            if (!items?.length) return
-            const first = items[0]
-            const last = items[items.length - 1]
-            if (event.shiftKey && document.activeElement === first) {
-               event.preventDefault()
-               last.focus()
-            } else if (!event.shiftKey && document.activeElement === last) {
-               event.preventDefault()
-               first.focus()
-            }
-         }
-      }
-      window.addEventListener('keydown', onKey, true)
-      return () => {
-         window.removeEventListener('keydown', onKey, true)
-         if (previous instanceof HTMLElement) previous.focus()
-      }
-   }, [onClose])
-   return (
-      <div
-         className='modal-backdrop'
-         onPointerDown={(event) => {
-            if (event.target === event.currentTarget) onClose()
-         }}
-      >
-         <section
-            className={`modal ${wide ? 'modal-wide' : ''}`}
-            role='dialog'
-            aria-modal='true'
-            aria-label={title}
-         >
-            <header className='panel-header'>
-               <h2>{title}</h2>
-               <button
-                  type='button'
-                  ref={closeRef}
-                  className='icon-button'
-                  aria-label='關閉對話框'
-                  onClick={onClose}
-               >
-                  <X size={19} />
-               </button>
-            </header>
-            {children}
-         </section>
-      </div>
-   )
-}
-
-export const WorkspaceUi = track(function WorkspaceUi() {
-   const editor = useEditor()
+export function WorkspaceUi() {
    const [title, setTitle, titleFailed] = useLocalData(
       'archly-local-title-v1',
       '協作白板 · 系統架構',
@@ -235,6 +167,120 @@ export const WorkspaceUi = track(function WorkspaceUi() {
       'archly-local-milestones-v1',
       [],
    )
+   const [starred, setStarred] = useLocalData('archly-local-star-v1', false)
+   return (
+      <WorkspaceChrome
+         local={{
+            title,
+            setTitle,
+            threads,
+            setThreads,
+            milestones,
+            setMilestones,
+            starred,
+            setStarred,
+            failed: titleFailed || threadsFailed || versionsFailed,
+         }}
+      />
+   )
+}
+
+type LocalWorkspace = {
+   title: string
+   setTitle: Dispatch<SetStateAction<string>>
+   threads: Thread[]
+   setThreads: Dispatch<SetStateAction<Thread[]>>
+   milestones: Milestone[]
+   setMilestones: Dispatch<SetStateAction<Milestone[]>>
+   starred: boolean
+   setStarred: Dispatch<SetStateAction<boolean>>
+   failed: boolean
+}
+export type SyncedWorkspaceProps = {
+   isSharing: boolean
+   userName: string
+   heading: ReactNode
+   onShare: () => void
+   status: ReactNode
+   collaborators: { id: string; name: string; color: string }[]
+   tools: ReactNode
+}
+export function SyncedWorkspaceUi(props: SyncedWorkspaceProps) {
+   return <WorkspaceChrome remote={props} />
+}
+export function WorkspaceUnavailable({
+   heading,
+   onShare,
+   userName,
+   children,
+}: {
+   heading: ReactNode
+   onShare: () => void
+   userName: string
+   children: ReactNode
+}) {
+   const [menu, setMenu] = useState(false)
+   return (
+      <section className='whiteboard-app document-workspace'>
+         <div className='workspace-ui'>
+            <header className='document-bar floating-surface'>
+               <button
+                  type='button'
+                  className='brand'
+                  aria-label='文件選單'
+                  aria-expanded={menu}
+                  onClick={() => setMenu(!menu)}
+               >
+                  <span className='brand-mark'>a</span>
+                  <span className='brand-word'>
+                     archly<span>✳</span>
+                  </span>
+                  <ChevronDown size={13} />
+               </button>
+               <span className='divider' />
+               {heading}
+            </header>
+            {menu && (
+               <nav className='file-menu floating-surface'>
+                  <a href='/documents'>← 我的文件</a>
+                  <form action='/auth/logout' method='post' className='account-actions'>
+                     <span>{userName}</span>
+                     <button type='submit'>登出</button>
+                  </form>
+               </nav>
+            )}
+            <div className='collaboration-bar floating-surface'>
+               <span className='local-status'>
+                  <CloudOff size={14} />
+                  同步服務尚未連線
+               </span>
+               <button type='button' className='primary-button share-button' onClick={onShare}>
+                  <Users size={16} />
+                  分享
+               </button>
+            </div>
+         </div>
+         <div className='board-loading'>{children}</div>
+      </section>
+   )
+}
+const WorkspaceChrome = track(function WorkspaceChrome({
+   local,
+   remote,
+}: {
+   local?: LocalWorkspace
+   remote?: SyncedWorkspaceProps
+}) {
+   const editor = useEditor()
+   const title = local?.title ?? ''
+   const threads = local?.threads ?? []
+   const milestones = local?.milestones ?? []
+   const setTitle = local?.setTitle
+   const setThreads = local?.setThreads
+   const setMilestones = local?.setMilestones
+   const starred = local?.starred ?? false
+   const setStarred = local?.setStarred
+   const [objects, setObjects] = useState(false)
    const [library, setLibrary] = useState(() => window.innerWidth > 780)
    const searchRef = useRef<HTMLInputElement>(null)
    const [panel, setPanel] = useState<Panel>(null)
@@ -246,8 +292,15 @@ export const WorkspaceUi = track(function WorkspaceUi() {
    const [milestoneName, setMilestoneName] = useState('')
    const [preview, setPreview] = useState<Milestone | null>(null)
    const [notice, setNotice] = useState('')
-   const [starred, setStarred] = useLocalData('archly-local-star-v1', false)
    const [fileMenu, setFileMenu] = useState(false)
+   useEffect(() => {
+      if (!remote?.isSharing && !modal && !preview) return
+      const menuId = 'archly-workspace-dialog'
+      editor.menus.addOpenMenu(menuId)
+      return () => {
+         editor.menus.deleteOpenMenu(menuId)
+      }
+   }, [editor, remote?.isSharing, modal, preview])
    const currentTool = editor.getCurrentToolId()
    const selected = editor.getSelectedShapes()
    const selectedNode =
@@ -265,21 +318,20 @@ export const WorkspaceUi = track(function WorkspaceUi() {
       return () => window.clearTimeout(timeout)
    }, [notice])
 
-   useEffect(
-      () =>
-         editor.sideEffects.registerBeforeDeleteHandler('shape', (shape) => {
-            const bounds = editor.getShapePageBounds(shape.id)
-            if (bounds)
-               setThreads((current) =>
-                  current.map((thread) =>
-                     thread.shapeId === shape.id
-                        ? { ...thread, x: bounds.maxX - 14, y: bounds.y + 14 }
-                        : thread,
-                  ),
-               )
-         }),
-      [editor, setThreads],
-   )
+   useEffect(() => {
+      if (!setThreads) return
+      return editor.sideEffects.registerBeforeDeleteHandler('shape', (shape) => {
+         const bounds = editor.getShapePageBounds(shape.id)
+         if (bounds)
+            setThreads?.((current) =>
+               current.map((thread) =>
+                  thread.shapeId === shape.id
+                     ? { ...thread, x: bounds.maxX - 14, y: bounds.y + 14 }
+                     : thread,
+               ),
+            )
+      })
+   }, [editor, setThreads])
 
    useEffect(() => {
       const onKey = (event: KeyboardEvent) => {
@@ -289,7 +341,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
             preview ||
             editor.getEditingShapeId() ||
             target?.isContentEditable ||
-            target?.closest('input, textarea, select')
+            target?.closest('input, textarea, select, [role="dialog"]')
          )
             return
          const modifier = event.metaKey || event.ctrlKey
@@ -301,6 +353,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
          }
          if (modifier && event.key.toLowerCase() === 'z') {
             event.preventDefault()
+            if (remote) return
             if (event.shiftKey) editor.redo()
             else editor.undo()
             return
@@ -316,6 +369,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
             n: 'note',
             r: 'geo',
          }
+         if (remote && ['p', 'e', 'n', 'r'].includes(event.key.toLowerCase())) return
          if (tools[event.key.toLowerCase()]) {
             event.preventDefault()
             editor.setCurrentTool(tools[event.key.toLowerCase()])
@@ -336,7 +390,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
       }
       window.addEventListener('keydown', onKey)
       return () => window.removeEventListener('keydown', onKey)
-   }, [editor, modal, preview])
+   }, [editor, modal, preview, remote])
 
    function addNode(kind: NodeKind) {
       const definition = NODE_KINDS[kind]
@@ -356,6 +410,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
    }
 
    function postComment() {
+      if (!local) return
       if (!draft.trim()) return
       const message: Message = {
          id: crypto.randomUUID(),
@@ -364,7 +419,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
          time: new Date().toISOString(),
       }
       if (activeThread && threads.some((thread) => thread.id === activeThread)) {
-         setThreads((current) =>
+         setThreads?.((current) =>
             current.map((thread) =>
                thread.id === activeThread
                   ? { ...thread, messages: [...thread.messages, message] }
@@ -382,7 +437,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
             resolved: false,
             messages: [message],
          }
-         setThreads((current) => [...current, thread])
+         setThreads?.((current) => [...current, thread])
          setActiveThread(thread.id)
       }
       setDraft('')
@@ -390,6 +445,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
    }
 
    function saveMilestone() {
+      if (!local) return
       if (!milestoneName.trim()) return
       const { document } = getSnapshot(editor.store)
       const version: Milestone = {
@@ -398,7 +454,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
          date: new Date().toISOString(),
          document,
       }
-      setMilestones((current) => [version, ...current])
+      setMilestones?.((current) => [version, ...current])
       setMilestoneName('')
       setNotice('已建立本機里程碑，可唯讀預覽')
    }
@@ -435,29 +491,44 @@ export const WorkspaceUi = track(function WorkspaceUi() {
                <ChevronDown size={13} />
             </button>
             <span className='divider' />
-            <div className='document-heading'>
-               <input
-                  aria-label='文件名稱'
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
+            {remote ? (
+               remote.heading
+            ) : (
+               <div className='document-heading'>
+                  <input
+                     aria-label='文件名稱'
+                     value={title}
+                     onChange={(event) => setTitle?.(event.target.value)}
+                  />
+                  <span>
+                     <LockKeyhole size={10} /> 本機文件 <span className='heading-dot'>·</span>{' '}
+                     僅儲存於此裝置
+                  </span>
+               </div>
+            )}
+            {!remote && (
+               <IconButton
+                  icon={Sparkles}
+                  label={starred ? '取消收藏' : '收藏文件'}
+                  active={starred}
+                  onClick={() => setStarred?.(!starred)}
+                  className='favorite-button'
                />
-               <span>
-                  <LockKeyhole size={10} /> 本機文件 <span className='heading-dot'>·</span>{' '}
-                  僅儲存於此裝置
-               </span>
-            </div>
-            <IconButton
-               icon={Sparkles}
-               label={starred ? '取消收藏' : '收藏文件'}
-               active={starred}
-               onClick={() => setStarred(!starred)}
-               className='favorite-button'
-            />
+            )}
          </header>
 
          {fileMenu && (
             <div className='file-menu floating-surface'>
                <span className='eyebrow'>你的工作空間</span>
+               {remote && (
+                  <>
+                     <a href='/documents'>← 我的文件</a>
+                     <form action='/auth/logout' method='post' className='account-actions'>
+                        <span>{remote.userName}</span>
+                        <button type='submit'>登出</button>
+                     </form>
+                  </>
+               )}
                <button
                   type='button'
                   onClick={() => {
@@ -502,35 +573,67 @@ export const WorkspaceUi = track(function WorkspaceUi() {
          )}
 
          <div className='collaboration-bar floating-surface'>
-            <span className='local-status' title='本機介面預覽，Cloudflare 與 Supabase 尚未串接'>
-               <CloudOff size={14} />
-               本機模式
-            </span>
+            {remote ? (
+               <div className='workspace-sync-status'>{remote.status}</div>
+            ) : (
+               <span className='local-status' title='本機介面預覽，Cloudflare 與 Supabase 尚未串接'>
+                  <CloudOff size={14} />
+                  本機模式
+               </span>
+            )}
+            {remote && (
+               <ul className='workspace-collaborators' aria-label='協作者'>
+                  {remote.collaborators.map((peer) => (
+                     <li key={peer.id} title={peer.name} style={{ background: peer.color }}>
+                        {peer.name}
+                     </li>
+                  ))}
+               </ul>
+            )}
             <span className='divider' />
-            <button
-               type='button'
-               className='avatar'
-               aria-label='目前使用者與協作狀態'
-               onClick={() => setModal('share')}
-            >
-               你
-            </button>
+            {!remote && (
+               <button
+                  type='button'
+                  className='avatar'
+                  aria-label='目前使用者與協作狀態'
+                  onClick={() => setModal('share')}
+               >
+                  你
+               </button>
+            )}
+            {remote && (
+               <IconButton
+                  icon={SlidersHorizontal}
+                  label='物件與連線'
+                  active={objects}
+                  onClick={() => {
+                     setObjects(!objects)
+                     setPanel(null)
+                  }}
+               />
+            )}
             <IconButton
                icon={MessageCircle}
                label='留言討論'
                active={panel === 'comments'}
-               onClick={() => setPanel(panel === 'comments' ? null : 'comments')}
+               onClick={() => {
+                  setObjects(false)
+                  setPanel(panel === 'comments' ? null : 'comments')
+               }}
             />
             <IconButton
                icon={History}
                label='版本歷史'
                active={panel === 'versions'}
-               onClick={() => setPanel(panel === 'versions' ? null : 'versions')}
+               onClick={() => {
+                  setObjects(false)
+                  setPanel(panel === 'versions' ? null : 'versions')
+               }}
             />
             <button
                type='button'
                className='primary-button share-button'
-               onClick={() => setModal('share')}
+               onClick={() => (remote ? remote.onShare() : setModal('share'))}
             >
                <Users size={16} />
                分享
@@ -609,7 +712,12 @@ export const WorkspaceUi = track(function WorkspaceUi() {
                </div>
                <div className='library-section'>
                   <span className='eyebrow'>讓想法更清楚</span>
-                  <button type='button' onClick={() => editor.setCurrentTool('note')}>
+                  <button
+                     type='button'
+                     disabled={!!remote}
+                     title={remote ? '便利貼尚未交付' : undefined}
+                     onClick={() => editor.setCurrentTool('note')}
+                  >
                      <StickyNote size={17} />
                      <span>便利貼</span>
                      <kbd>N</kbd>
@@ -676,7 +784,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
                <label>
                   節點名稱
                   <input
-                     aria-label='編輯選取節點名稱'
+                     aria-label={remote ? '架構節點名稱' : '編輯選取節點名稱'}
                      value={selectedNode.props.title}
                      onChange={(event) =>
                         editor.updateShape<ArchitectureNode>({
@@ -690,6 +798,21 @@ export const WorkspaceUi = track(function WorkspaceUi() {
             </div>
          )}
 
+         {remote && objects && (
+            <aside
+               className='side-panel floating-surface workspace-object-panel'
+               aria-label='物件與連線設定'
+            >
+               <header className='panel-header'>
+                  <h2>
+                     <SlidersHorizontal size={18} />
+                     物件與連線
+                  </h2>
+                  <IconButton icon={X} label='關閉物件設定' onClick={() => setObjects(false)} />
+               </header>
+               <div className='workspace-panel-body'>{remote.tools}</div>
+            </aside>
+         )}
          {panel && (
             <aside
                className='side-panel floating-surface'
@@ -711,204 +834,230 @@ export const WorkspaceUi = track(function WorkspaceUi() {
                   </h2>
                   <IconButton icon={X} label='關閉側欄' onClick={() => setPanel(null)} />
                </header>
-               <div className='panel-local-note'>
-                  <CloudOff size={13} />
-                  本機預覽 · 尚未同步至雲端
-               </div>
-               {panel === 'comments' ? (
-                  <>
-                     <div className='panel-tabs'>
-                        {[
-                           { id: 'open', label: '未解決' },
-                           { id: 'resolved', label: '已解決' },
-                           { id: 'all', label: '全部' },
-                        ].map((tab) => (
-                           <button
-                              type='button'
-                              key={tab.id}
-                              className={filter === tab.id ? 'selected' : ''}
-                              onClick={() => setFilter(tab.id)}
-                           >
-                              {tab.label}
-                           </button>
-                        ))}
-                     </div>
-                     <div className='thread-list'>
-                        {visibleThreads.map((thread) => (
-                           <article
-                              key={thread.id}
-                              className={`thread-card ${activeThread === thread.id ? 'selected' : ''}`}
-                           >
-                              <button
-                                 type='button'
-                                 className='thread-anchor'
-                                 onClick={() => {
-                                    setActiveThread(thread.id)
-                                    if (thread.shapeId && editor.getShape(thread.shapeId)) {
-                                       editor.select(thread.shapeId)
-                                       editor.zoomToSelection({ animation: { duration: 200 } })
-                                    }
-                                 }}
-                              >
-                                 <Link2 size={12} />
-                                 {thread.shapeId
-                                    ? editor.getShape(thread.shapeId)
-                                       ? '物件留言'
-                                       : '原物件已移除'
-                                    : '畫布座標留言'}
-                                 <ArrowUpRight size={12} />
-                              </button>
-                              {thread.messages.map((message) => (
-                                 <div className='comment-message' key={message.id}>
-                                    <span
-                                       className={`message-avatar ${message.author === '你' ? 'own' : ''}`}
-                                    >
-                                       {message.author === '你' ? '你' : 'a'}
-                                    </span>
-                                    <div>
-                                       <div className='message-meta'>
-                                          <strong>{message.author}</strong>
-                                          <time>
-                                             {message.time === '示範留言'
-                                                ? message.time
-                                                : new Date(message.time).toLocaleTimeString(
-                                                     'zh-TW',
-                                                     { hour: '2-digit', minute: '2-digit' },
-                                                  )}
-                                          </time>
-                                       </div>
-                                       <p>{message.body}</p>
-                                    </div>
-                                 </div>
-                              ))}
-                              <div className='thread-actions'>
-                                 <button type='button' onClick={() => setActiveThread(thread.id)}>
-                                    <MessageCircle size={13} />
-                                    回覆
-                                 </button>
-                                 <button
-                                    type='button'
-                                    onClick={() =>
-                                       setThreads((current) =>
-                                          current.map((item) =>
-                                             item.id === thread.id
-                                                ? { ...item, resolved: !item.resolved }
-                                                : item,
-                                          ),
-                                       )
-                                    }
-                                 >
-                                    <Check size={14} />
-                                    {thread.resolved ? '重新開啟' : '標記已解決'}
-                                 </button>
-                              </div>
-                           </article>
-                        ))}
-                        {visibleThreads.length === 0 && (
-                           <div className='panel-empty'>
-                              <MessageCircle size={28} />
-                              <h3>
-                                 {filter === 'resolved' ? '還沒有已解決的討論' : '讓討論從這裡開始'}
-                              </h3>
-                              <p>選取物件或直接留言，記錄你的想法。</p>
-                           </div>
-                        )}
-                     </div>
-                     <form
-                        className='comment-composer'
-                        onSubmit={(event) => {
-                           event.preventDefault()
-                           postComment()
-                        }}
-                     >
-                        <div className='composer-heading'>
-                           <span>
-                              {activeThread
-                                 ? '回覆討論串'
-                                 : selected.length === 1
-                                   ? '在選取物件上留言'
-                                   : '新增畫布座標留言'}
-                           </span>
-                           {activeThread && (
-                              <button type='button' onClick={() => setActiveThread(null)}>
-                                 改為新討論
-                              </button>
-                           )}
-                        </div>
-                        <textarea
-                           aria-label='留言內容'
-                           placeholder='分享你的想法…'
-                           value={draft}
-                           onChange={(event) => setDraft(event.target.value)}
-                        />
-                        <div className='composer-footer'>
-                           <span>留言僅保留於此瀏覽器</span>
-                           <button
-                              className='primary-button'
-                              type='submit'
-                              disabled={!draft.trim()}
-                              aria-label='送出留言'
-                           >
-                              <Send size={14} />
-                              送出
-                           </button>
-                        </div>
-                     </form>
-                  </>
+               {remote ? (
+                  <div className='pending-feature'>
+                     <Clock3 size={18} />
+                     <p>
+                        {panel === 'comments'
+                           ? '留言協作尚未交付，將於 S4 提供。目前不會建立本機留言。'
+                           : '版本歷史尚未交付，將於 S5 提供。目前不會建立本機里程碑。'}
+                     </p>
+                  </div>
                ) : (
                   <>
-                     <div className='version-intro'>
-                        <span className='version-intro-icon'>
-                           <GitBranch size={23} />
-                        </span>
-                        <h3>為好想法，留個里程碑。</h3>
-                        <p>保存此刻的畫布，隨時唯讀回看。</p>
+                     <div className='panel-local-note'>
+                        <CloudOff size={13} />
+                        本機預覽 · 尚未同步至雲端
                      </div>
-                     <form
-                        className='milestone-form'
-                        onSubmit={(event) => {
-                           event.preventDefault()
-                           saveMilestone()
-                        }}
-                     >
-                        <label htmlFor='milestone-name'>里程碑名稱</label>
-                        <input
-                           id='milestone-name'
-                           placeholder='例如：第一版架構提案'
-                           value={milestoneName}
-                           onChange={(event) => setMilestoneName(event.target.value)}
-                        />
-                        <button
-                           type='button'
-                           className='primary-button'
-                           disabled={!milestoneName.trim()}
-                        >
-                           <Plus size={15} />
-                           建立本機里程碑
-                        </button>
-                     </form>
-                     <div className='version-list'>
-                        {milestones.map((milestone) => (
-                           <button
-                              type='button'
-                              className='version-item'
-                              key={milestone.id}
-                              onClick={() => setPreview(milestone)}
+                     {panel === 'comments' ? (
+                        <>
+                           <div className='panel-tabs'>
+                              {[
+                                 { id: 'open', label: '未解決' },
+                                 { id: 'resolved', label: '已解決' },
+                                 { id: 'all', label: '全部' },
+                              ].map((tab) => (
+                                 <button
+                                    type='button'
+                                    key={tab.id}
+                                    className={filter === tab.id ? 'selected' : ''}
+                                    onClick={() => setFilter(tab.id)}
+                                 >
+                                    {tab.label}
+                                 </button>
+                              ))}
+                           </div>
+                           <div className='thread-list'>
+                              {visibleThreads.map((thread) => (
+                                 <article
+                                    key={thread.id}
+                                    className={`thread-card ${activeThread === thread.id ? 'selected' : ''}`}
+                                 >
+                                    <button
+                                       type='button'
+                                       className='thread-anchor'
+                                       onClick={() => {
+                                          setActiveThread(thread.id)
+                                          if (thread.shapeId && editor.getShape(thread.shapeId)) {
+                                             editor.select(thread.shapeId)
+                                             editor.zoomToSelection({
+                                                animation: { duration: 200 },
+                                             })
+                                          }
+                                       }}
+                                    >
+                                       <Link2 size={12} />
+                                       {thread.shapeId
+                                          ? editor.getShape(thread.shapeId)
+                                             ? '物件留言'
+                                             : '原物件已移除'
+                                          : '畫布座標留言'}
+                                       <ArrowUpRight size={12} />
+                                    </button>
+                                    {thread.messages.map((message) => (
+                                       <div className='comment-message' key={message.id}>
+                                          <span
+                                             className={`message-avatar ${message.author === '你' ? 'own' : ''}`}
+                                          >
+                                             {message.author === '你' ? '你' : 'a'}
+                                          </span>
+                                          <div>
+                                             <div className='message-meta'>
+                                                <strong>{message.author}</strong>
+                                                <time>
+                                                   {message.time === '示範留言'
+                                                      ? message.time
+                                                      : new Date(message.time).toLocaleTimeString(
+                                                           'zh-TW',
+                                                           { hour: '2-digit', minute: '2-digit' },
+                                                        )}
+                                                </time>
+                                             </div>
+                                             <p>{message.body}</p>
+                                          </div>
+                                       </div>
+                                    ))}
+                                    <div className='thread-actions'>
+                                       <button
+                                          type='button'
+                                          onClick={() => setActiveThread(thread.id)}
+                                       >
+                                          <MessageCircle size={13} />
+                                          回覆
+                                       </button>
+                                       <button
+                                          type='button'
+                                          onClick={() =>
+                                             setThreads?.((current) =>
+                                                current.map((item) =>
+                                                   item.id === thread.id
+                                                      ? { ...item, resolved: !item.resolved }
+                                                      : item,
+                                                ),
+                                             )
+                                          }
+                                       >
+                                          <Check size={14} />
+                                          {thread.resolved ? '重新開啟' : '標記已解決'}
+                                       </button>
+                                    </div>
+                                 </article>
+                              ))}
+                              {visibleThreads.length === 0 && (
+                                 <div className='panel-empty'>
+                                    <MessageCircle size={28} />
+                                    <h3>
+                                       {filter === 'resolved'
+                                          ? '還沒有已解決的討論'
+                                          : '讓討論從這裡開始'}
+                                    </h3>
+                                    <p>選取物件或直接留言，記錄你的想法。</p>
+                                 </div>
+                              )}
+                           </div>
+                           <form
+                              className='comment-composer'
+                              onSubmit={(event) => {
+                                 event.preventDefault()
+                                 postComment()
+                              }}
                            >
-                              <span className='version-dot' />
-                              <span>
-                                 <strong>{milestone.name}</strong>
-                                 <small>{new Date(milestone.date).toLocaleString('zh-TW')}</small>
+                              <div className='composer-heading'>
+                                 <span>
+                                    {activeThread
+                                       ? '回覆討論串'
+                                       : selected.length === 1
+                                         ? '在選取物件上留言'
+                                         : '新增畫布座標留言'}
+                                 </span>
+                                 {activeThread && (
+                                    <button type='button' onClick={() => setActiveThread(null)}>
+                                       改為新討論
+                                    </button>
+                                 )}
+                              </div>
+                              <textarea
+                                 aria-label='留言內容'
+                                 placeholder='分享你的想法…'
+                                 value={draft}
+                                 onChange={(event) => setDraft(event.target.value)}
+                              />
+                              <div className='composer-footer'>
+                                 <span>留言僅保留於此瀏覽器</span>
+                                 <button
+                                    className='primary-button'
+                                    type='submit'
+                                    disabled={!draft.trim()}
+                                    aria-label='送出留言'
+                                 >
+                                    <Send size={14} />
+                                    送出
+                                 </button>
+                              </div>
+                           </form>
+                        </>
+                     ) : (
+                        <>
+                           <div className='version-intro'>
+                              <span className='version-intro-icon'>
+                                 <GitBranch size={23} />
                               </span>
-                              <Eye size={17} />
-                           </button>
-                        ))}
-                        {!milestones.length && <p className='muted centered'>尚未建立里程碑版本</p>}
-                     </div>
-                     <div className='pending-feature'>
-                        <Clock3 size={16} />
-                        <p>自動快照、安全還原與保留政策將於 S5 串接；本機里程碑不是雲端備份。</p>
-                     </div>
+                              <h3>為好想法，留個里程碑。</h3>
+                              <p>保存此刻的畫布，隨時唯讀回看。</p>
+                           </div>
+                           <form
+                              className='milestone-form'
+                              onSubmit={(event) => {
+                                 event.preventDefault()
+                                 saveMilestone()
+                              }}
+                           >
+                              <label htmlFor='milestone-name'>里程碑名稱</label>
+                              <input
+                                 id='milestone-name'
+                                 placeholder='例如：第一版架構提案'
+                                 value={milestoneName}
+                                 onChange={(event) => setMilestoneName(event.target.value)}
+                              />
+                              <button
+                                 type='button'
+                                 className='primary-button'
+                                 disabled={!milestoneName.trim()}
+                              >
+                                 <Plus size={15} />
+                                 建立本機里程碑
+                              </button>
+                           </form>
+                           <div className='version-list'>
+                              {milestones.map((milestone) => (
+                                 <button
+                                    type='button'
+                                    className='version-item'
+                                    key={milestone.id}
+                                    onClick={() => setPreview(milestone)}
+                                 >
+                                    <span className='version-dot' />
+                                    <span>
+                                       <strong>{milestone.name}</strong>
+                                       <small>
+                                          {new Date(milestone.date).toLocaleString('zh-TW')}
+                                       </small>
+                                    </span>
+                                    <Eye size={17} />
+                                 </button>
+                              ))}
+                              {!milestones.length && (
+                                 <p className='muted centered'>尚未建立里程碑版本</p>
+                              )}
+                           </div>
+                           <div className='pending-feature'>
+                              <Clock3 size={16} />
+                              <p>
+                                 自動快照、安全還原與保留政策將於 S5 串接；本機里程碑不是雲端備份。
+                              </p>
+                           </div>
+                        </>
+                     )}
                   </>
                )}
             </aside>
@@ -918,32 +1067,36 @@ export const WorkspaceUi = track(function WorkspaceUi() {
             <div className='history-controls floating-surface'>
                <IconButton
                   icon={Undo2}
-                  label='復原 ⌘Z'
+                  label={remote ? '復原（S3 尚未提供）' : '復原 ⌘Z'}
                   onClick={() => editor.undo()}
-                  disabled={!editor.getCanUndo()}
+                  disabled={!!remote || !editor.getCanUndo()}
                />
                <IconButton
                   icon={Redo2}
-                  label='重做 ⇧⌘Z'
+                  label={remote ? '重做（S3 尚未提供）' : '重做 ⇧⌘Z'}
                   onClick={() => editor.redo()}
-                  disabled={!editor.getCanRedo()}
+                  disabled={!!remote || !editor.getCanRedo()}
                />
             </div>
             <nav className='drawing-toolbar floating-surface' aria-label='畫布工具列'>
-               {toolbar.map(({ tool, label, shortcut, icon: Icon }, index) => (
-                  <button
-                     type='button'
-                     key={tool}
-                     className={`tool-button ${currentTool === tool ? 'selected' : ''} ${index === 4 ? 'tool-group-start' : ''}`}
-                     aria-label={`${label} ${shortcut}`}
-                     aria-pressed={currentTool === tool}
-                     title={`${label} (${shortcut})`}
-                     onClick={() => editor.setCurrentTool(tool)}
-                  >
-                     <Icon size={23} strokeWidth={1.65} />
-                     <span className='tool-shortcut'>{shortcut}</span>
-                  </button>
-               ))}
+               {toolbar
+                  .filter(
+                     ({ tool }) => !remote || ['select', 'hand', 'arrow', 'text'].includes(tool),
+                  )
+                  .map(({ tool, label, shortcut, icon: Icon }, index) => (
+                     <button
+                        type='button'
+                        key={tool}
+                        className={`tool-button ${currentTool === tool ? 'selected' : ''} ${index === 4 ? 'tool-group-start' : ''}`}
+                        aria-label={`${label} ${shortcut}`}
+                        aria-pressed={currentTool === tool}
+                        title={`${label} (${shortcut})`}
+                        onClick={() => editor.setCurrentTool(tool)}
+                     >
+                        <Icon size={23} strokeWidth={1.65} />
+                        <span className='tool-shortcut'>{shortcut}</span>
+                     </button>
+                  ))}
                <span className='divider' />
                <IconButton
                   icon={MessageCircle}
@@ -1035,7 +1188,7 @@ export const WorkspaceUi = track(function WorkspaceUi() {
          >
             <CircleHelp size={19} />
          </button>
-         {(titleFailed || threadsFailed || versionsFailed) && (
+         {local?.failed && (
             <div className='storage-warning' role='alert'>
                瀏覽器儲存空間不可用，部分本機資料可能無法保留。請勿關閉頁面。
             </div>
@@ -1105,12 +1258,17 @@ export const WorkspaceUi = track(function WorkspaceUi() {
                      參考 FigJam 的輕量浮動介面，為系統架構討論而設計。
                   </p>
                   <div className='shortcut-grid'>
-                     {toolbar.map((tool) => (
-                        <div key={tool.tool}>
-                           <span>{tool.label}</span>
-                           <kbd>{tool.shortcut}</kbd>
-                        </div>
-                     ))}
+                     {toolbar
+                        .filter(
+                           ({ tool }) =>
+                              !remote || ['select', 'hand', 'arrow', 'text'].includes(tool),
+                        )
+                        .map((tool) => (
+                           <div key={tool.tool}>
+                              <span>{tool.label}</span>
+                              <kbd>{tool.shortcut}</kbd>
+                           </div>
+                        ))}
                      <div>
                         <span>復原／重做</span>
                         <kbd>⌘ Z</kbd>
@@ -1125,13 +1283,15 @@ export const WorkspaceUi = track(function WorkspaceUi() {
                      <div>
                         <strong>目前可操作</strong>
                         <p>
-                           本機節點、連線、文字、手繪、畫布操作、留言與里程碑預覽。雙擊節點修改名稱。
+                           {remote
+                              ? '架構節點、有向連線、文字、多人游標與可靠保存。雙擊節點修改名稱；使用右上物件與連線設定編輯座標、尺寸及標籤。'
+                              : '本機節點、連線、文字、手繪、畫布操作、留言與里程碑預覽。雙擊節點修改名稱。'}
                         </p>
                         <strong>接下來串接</strong>
                         <p>
-                           GitHub
-                           登入、多人游標、雲端保存、權限、留言即時更新與安全版本還原。此介面不代表
-                           G0／S1–S5 驗收完成。
+                           {remote
+                              ? '筆畫、個人復原／重做（S3）、留言（S4）及版本歷史（S5）尚未交付。'
+                              : 'GitHub 登入、多人游標、雲端保存、權限、留言即時更新與安全版本還原。此介面不代表 G0／S1–S5 驗收完成。'}
                         </p>
                      </div>
                   </div>

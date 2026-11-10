@@ -1814,6 +1814,17 @@ kbd {
    gap: 8px;
    font-size: 13px;
 }
+.canvas-controls fieldset {
+   display: grid;
+   gap: 6px;
+   min-width: 0;
+   border: 1px solid #d8dedc;
+   padding: 8px;
+}
+.canvas-controls .canvas-navigation {
+   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.canvas-controls select,
 .canvas-controls input {
    width: 100%;
    border: 1px solid #c7cecb;
@@ -1830,3 +1841,31 @@ kbd {
    padding: 0;
    list-style: none;
 }
+
+/* Shared FigJam workspace with authenticated document controls. */
+.formal-workspace { height: 100dvh; overflow: hidden; }
+.workspace-title-form { display: flex; align-items: center; gap: 6px; }
+.workspace-title-form button { font-size: 11px; color: #8653e8; white-space: nowrap; }
+.document-heading h1 { margin: 0; font-size: 14px; }
+.document-heading > output { font-size: 10px; color: #41795b; }
+.workspace-sync-status { display: grid; gap: 3px; font-size: 10px; color: #746a80; }
+.workspace-sync-status button { color: #8653e8; text-decoration: underline; }
+.workspace-collaborators { display: flex; list-style: none; gap: 4px; padding: 0; margin: 0; }
+.workspace-collaborators li { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: white; padding: 6px; border-radius: 16px; font-size: 10px; }
+.workspace-panel-body { overflow: auto; flex: 1; min-height: 0; padding: 14px; }
+.workspace-object-panel .canvas-controls { position: static; width: 100%; max-height: none; border: 0; padding: 0; overflow: visible; }
+.file-menu a { display: block; padding: 10px 12px; }
+.share-modal-body { max-height: 65dvh; overflow: auto; }
+.share-modal-body input { max-width: 100%; border: 1px solid #e9e7ed; border-radius: 6px; padding: 8px; }
+.document-workspace .document-bar { max-width: calc(50% - 30px); }
+.document-workspace .document-heading { min-width: 0; }
+.document-workspace .document-heading input { max-width: 100%; }
+@media (max-width: 780px) {
+   .document-workspace .document-bar { max-width: calc(100% - 28px); }
+   .document-workspace .collaboration-bar { top: 88px; right: 14px; left: auto; height: 50px; gap: 6px; }
+   .document-workspace .component-library { top: 150px; }
+   .document-workspace .side-panel { top: 150px; }
+   .document-workspace .selection-inspector { top: 150px; }
+}
+
+.formal-workspace > .modal-backdrop { position: fixed; z-index: 600; }

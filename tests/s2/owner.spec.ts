@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { registeredUser } from '../s1/sharing-fixtures'
+import { openObjectPanel } from './canvas-fixtures'
 
 test('owner edits architecture nodes on the formal document canvas and reopens confirmed content', async ({
    browser,
@@ -18,6 +19,7 @@ test('owner edits architecture nodes on the formal document canvas and reopens c
       const document = await creation.json()
       const page = await context.newPage()
       await page.goto(`/documents/${document.id}`)
+      await openObjectPanel(page)
       await expect(page.getByRole('button', { name: '新增節點', exact: true })).toBeVisible()
       await page.getByLabel('新增節點名稱').fill('API service')
       await page.getByRole('button', { name: '新增節點', exact: true }).click()
@@ -31,12 +33,14 @@ test('owner edits architecture nodes on the formal document canvas and reopens c
       const runtimes = await restart.json()
       expect(runtimes.runtimeId).not.toBe(runtimes.previousRuntimeId)
       await page.reload()
+      await openObjectPanel(page)
       await expect(page.getByLabel('畫布節點')).toContainText('API service')
       await page.getByRole('button', { name: '選取 API service', exact: true }).click()
       await page.getByLabel('選取節點名稱').fill('Renamed service')
       await page.getByRole('button', { name: '向右移動節點', exact: true }).click()
       await expect(page.getByLabel('保存狀態')).toHaveText('已確認持久化')
       await page.reload()
+      await openObjectPanel(page)
       await expect(page.getByLabel('畫布節點')).toContainText('Renamed service')
       await expect(page.getByLabel('畫布節點')).toContainText('x:140')
       await expect(page.getByLabel('保存狀態')).toHaveText('已確認持久化')
@@ -47,6 +51,7 @@ test('owner edits architecture nodes on the formal document canvas and reopens c
       await page.getByRole('button', { name: '刪除選取節點', exact: true }).click()
       await expect(page.getByLabel('保存狀態')).toHaveText('已確認持久化')
       await page.reload()
+      await openObjectPanel(page)
       await expect(page.getByLabel('畫布節點')).not.toContainText('Renamed service')
       await expect(page.getByLabel('保存狀態')).toHaveText('已確認持久化')
    } finally {
