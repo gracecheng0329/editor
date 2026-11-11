@@ -59,6 +59,9 @@ function encode(bytes: Uint8Array) {
       .replaceAll('/', '_')
       .replaceAll('=', '')
 }
+function allowedOrigins(env: Env) {
+   return env.APP_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
+}
 function decode(value: string) {
    return Uint8Array.from(atob(value.replaceAll('-', '+').replaceAll('_', '/')), (char) =>
       char.charCodeAt(0),
@@ -123,9 +126,24 @@ const worker = {
    async fetch(request: Request, env: Env) {
       const url = new URL(request.url)
       if (url.pathname === '/health') return new Response('ready', { headers: noStore })
-      if (request.headers.get('Origin') !== env.APP_ORIGIN)
+      const match = /^\/documents\/([0-9a-f-]{36})(?:\/(checkpoint|session))?$/.exec(url.pathname)
+      const origins = allowedOrigins(env)
+      const origin = request.headers.get('Origin')
+      // A browser address-bar visit to the session API is a document navigation, not an API call.
+      // Send it to the actual document UI; API clients still need POST + auth.
+      const isNavigation = request.headers.get('Sec-Fetch-Mode') === 'navigate'
+      if (match?.[2] === 'session' && request.method === 'GET' && (isNavigation || !origin)) {
+         return new Response(null, {
+            status: 302,
+            headers: {
+               ...noStore,
+               Location: new URL(`/documents/${match[1]}`, origins[0]).toString(),
+            },
+         })
+      }
+      if (!origin || !origins.includes(origin))
          return new Response('Forbidden', { status: 403, headers: noStore })
-      const cors = { ...noStore, 'Access-Control-Allow-Origin': env.APP_ORIGIN, Vary: 'Origin' }
+      const cors = { ...noStore, 'Access-Control-Allow-Origin': origin, Vary: 'Origin' }
       if (request.method === 'OPTIONS')
          return new Response(null, {
             status: 204,
@@ -135,7 +153,6 @@ const worker = {
                'Access-Control-Allow-Headers': 'Authorization, Content-Type',
             },
          })
-      const match = /^\/documents\/([0-9a-f-]{36})(?:\/(checkpoint|session))?$/.exec(url.pathname)
       if (!match) return new Response('Not found', { status: 404, headers: cors })
       try {
          const access = await (match[2]
