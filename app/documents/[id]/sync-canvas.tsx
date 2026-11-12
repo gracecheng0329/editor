@@ -22,6 +22,7 @@ import { syncedBindingUtils } from './arrow-binding'
 import { ObjectTools } from './object-tools'
 
 export type DocumentWorkspace = {
+   title: string
    heading: ReactNode
    onShare: () => void
    userName: string
@@ -211,18 +212,105 @@ function CanvasControls({
    )
 }
 
+function ReadonlyCanvas({ readOnly }: { readOnly: boolean }) {
+   const editor = useEditor()
+   useEffect(() => {
+      editor.updateInstanceState({ isReadonly: readOnly })
+   }, [editor, readOnly])
+   return null
+}
+
+function AccessDenied({
+   title,
+   viewer,
+}: {
+   title: string
+   viewer: boolean
+}) {
+   return (
+      <section className='whiteboard-app document-workspace' aria-label='畫布存取已撤銷'>
+         <div className='workspace-ui'>
+            <header className='document-bar floating-surface'>
+               <a className='brand' href={viewer ? '/share' : '/documents'}>
+                  <span className='brand-mark'>a</span>
+                  <span className='brand-word'>archly<span>✳</span></span>
+               </a>
+               <span className='divider' />
+               <h1>{title}</h1>
+            </header>
+            <section className='sync-access-status floating-surface'>
+               <p role='alert'>
+                  {viewer
+                     ? '分享連結無效或已撤銷。'
+                     : '你已失去此文件的存取資格；撤權後的修改不會保存。'}
+               </p>
+               <a href={viewer ? '/share' : '/documents'}>
+                  {viewer ? '重新開啟分享連結' : '返回我的文件'}
+               </a>
+            </section>
+         </div>
+      </section>
+   )
+}
+
+function SyncUnavailable({
+   workspace,
+   title,
+   viewer,
+   onRetry,
+}: {
+   workspace: DocumentWorkspace | null
+   title: string
+   viewer: boolean
+   onRetry: () => void
+}) {
+   if (!workspace || viewer)
+      return (
+         <section className='whiteboard-app document-workspace' aria-label='分享畫布'>
+            <div className='workspace-ui'>
+               <header className='document-bar floating-surface'>
+                  <a className='brand' href='/documents'>
+                     <span className='brand-mark'>a</span>
+                     <span className='brand-word'>archly<span>✳</span></span>
+                  </a>
+                  <span className='divider' />
+                  <h1>{title}</h1>
+               </header>
+               <section className='sync-access-status floating-surface'>
+                  <p role='status'>同步連線失敗，請再試一次。</p>
+                  <button type='button' onClick={onRetry}>重新連線</button>
+               </section>
+            </div>
+         </section>
+      )
+   return (
+      <WorkspaceUnavailable {...workspace}>
+         <p role='status'>同步連線失敗，請重試。</p>
+         <button type='button' onClick={onRetry}>重新連線</button>
+      </WorkspaceUnavailable>
+   )
+}
+
 type Identity = { id: string; name: string }
 function ConnectedCanvas({
    documentId,
    identity,
    onRetry,
+   shareToken,
+   viewerTitle,
    workspace,
 }: {
-   workspace: DocumentWorkspace
+   workspace: DocumentWorkspace | null
    documentId: string
    identity: Identity
    onRetry: () => void
+   shareToken: string
+   viewerTitle: string
 }) {
+   const viewer = workspace === null
+   const title = workspace?.title ?? viewerTitle
+   const [readOnly, setReadOnly] = useState(viewer)
+   const [accessDenied, setAccessDenied] = useState(false)
    const users = useMemo(() => {
       const colors = ['#4f46e5', '#be185d', '#047857', '#b45309', '#0369a1', '#7e22ce']
       const color =
@@ -247,11 +335,40 @@ function ConnectedCanvas({
    const base = process.env.NEXT_PUBLIC_SYNC_URL
    const roomURL = `${base}/documents/${encodeURIComponent(documentId)}`
    const uri = useCallback(async () => {
+      const makeUrl = (ticket: string) => {
+         const url = new URL(roomURL)
+         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+         url.searchParams.set('ticket', ticket)
+         return url.toString()
+      }
+      const issueShareTicket = async () => {
+         setReadOnly(true)
+         const issued = await fetch(`${roomURL}/session`, {
+            method: 'POST',
+            headers: { 'X-Share-Token': shareToken },
+            cache: 'no-store',
+         })
+         if (!issued.ok) {
+            if ([401, 403, 404].includes(issued.status)) setAccessDenied(true)
+            throw new Error('分享連結無效或已撤銷')
+         }
+         const { ticket } = await issued.json()
+         setReadOnly(true)
+         setAccessDenied(false)
+         return makeUrl(ticket)
+      }
+      if (viewer) return issueShareTicket()
+
       const response = await fetch(
          `/api/documents/${encodeURIComponent(documentId)}/sync-session`,
          { cache: 'no-store' },
       )
-      if (!response.ok) throw new Error('無法取得文件存取資格')
+      if (!response.ok) {
+         if (shareToken && [401, 403, 404].includes(response.status))
+            return issueShareTicket()
+         if ([401, 403, 404].includes(response.status)) setAccessDenied(true)
+         throw new Error('無法取得文件存取資格')
+      }
       const session = await response.json()
       token.current = session.accessToken
       const issued = await fetch(`${roomURL}/session`, {
@@ -259,13 +376,17 @@ function ConnectedCanvas({
          headers: { Authorization: `Bearer ${token.current}` },
          cache: 'no-store',
       })
-      if (!issued.ok) throw new Error('無法取得畫布連線資格')
+      if (!issued.ok) {
+         if (shareToken && [401, 403, 404].includes(issued.status))
+            return issueShareTicket()
+         if ([401, 403, 404].includes(issued.status)) setAccessDenied(true)
+         throw new Error('無法取得畫布連線資格')
+      }
       const { ticket } = await issued.json()
-      const url = new URL(roomURL)
-      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-      url.searchParams.set('ticket', ticket)
-      return url.toString()
-   }, [documentId, roomURL])
+      setReadOnly(false)
+      setAccessDenied(false)
+      return makeUrl(ticket)
+   }, [documentId, roomURL, shareToken, viewer])
    const confirm = useCallback(
       async (signal: AbortSignal): Promise<Checkpoint> => {
          const response = await fetch(`${roomURL}/checkpoint`, {
@@ -280,35 +401,38 @@ function ConnectedCanvas({
       [roomURL],
    )
    const store = useSync({ uri, assets, shapeUtils, bindingUtils: syncedBindingUtils, users })
+   if (accessDenied) return <AccessDenied title={title} viewer={readOnly} />
    if (store.status !== 'synced-remote')
-      return (
-         <WorkspaceUnavailable {...workspace}>
-            <p role='status'>
-               {store.status === 'error' ? '同步連線失敗，請重試。' : '正在連接同步服務…'}
-            </p>
-            {store.status === 'error' && (
-               <button type='button' onClick={onRetry}>
-                  重新連線
-               </button>
-            )}
-         </WorkspaceUnavailable>
+      return store.status === 'error' ? (
+         <SyncUnavailable workspace={workspace} title={title} viewer={readOnly} onRetry={onRetry} />
+      ) : (
+         <section className='whiteboard-app document-workspace' aria-label={viewer ? '分享畫布' : '文件畫布'}>
+            <p role='status'>正在連接同步服務…</p>
+         </section>
       )
    return (
-      <section className='whiteboard-app document-workspace' aria-label='文件畫布'>
+      <section className='whiteboard-app document-workspace' aria-label={readOnly ? '分享畫布' : '文件畫布'}>
          <Tldraw
             store={store}
             shapeUtils={shapeUtils}
             bindingUtils={syncedBindingUtils}
             hideUi
             onMount={(editor) => {
-               editor.updateInstanceState({ isGridMode: true })
+               editor.updateInstanceState({ isGridMode: true, isReadonly: readOnly })
             }}
          >
-            <CanvasControls
-               workspace={workspace}
-               connectionStatus={store.connectionStatus}
-               confirm={confirm}
-            />
+            <ReadonlyCanvas readOnly={readOnly} />
+            {readOnly ? (
+               <ViewerCanvasControls connectionStatus={store.connectionStatus} title={title} />
+            ) : (
+               workspace && (
+                  <CanvasControls
+                     workspace={workspace}
+                     connectionStatus={store.connectionStatus}
+                     confirm={confirm}
+                  />
+               )
+            )}
          </Tldraw>
       </section>
    )
@@ -324,9 +448,12 @@ export default function SyncCanvas({
    const [attempt, setAttempt] = useState(0)
    const [identity, setIdentity] = useState<Identity | null>(null)
    const [failed, setFailed] = useState(false)
+   const [shareToken, setShareToken] = useState('')
    // biome-ignore lint/correctness/useExhaustiveDependencies: Changing attempt explicitly retries session acquisition after a failure.
    useEffect(() => {
       const controller = new AbortController()
+      const fragment = window.location.hash.slice(1)
+      setShareToken(/^[A-Za-z0-9_-]{43}$/.test(fragment) ? fragment : '')
       fetch(`/api/documents/${encodeURIComponent(documentId)}/sync-session`, {
          cache: 'no-store',
          signal: controller.signal,
@@ -374,6 +501,79 @@ export default function SyncCanvas({
          workspace={workspace}
          identity={identity}
          documentId={documentId}
+         shareToken={shareToken}
+         viewerTitle={workspace.title}
+         onRetry={() => setAttempt((value) => value + 1)}
+      />
+   )
+}
+
+function ViewerCanvasControls({
+   connectionStatus,
+   title,
+}: {
+   connectionStatus: string
+   title: string
+}) {
+   const editor = useEditor()
+   const nodes = useValue(
+      'viewer canvas nodes',
+      () =>
+         editor
+            .getCurrentPageShapes()
+            .filter((shape): shape is ArchitectureNode => shape.type === 'architecture-node'),
+      [editor],
+   )
+   return (
+      <div className='workspace-ui viewer-workspace'>
+         <header className='document-bar floating-surface'>
+            <a className='brand' href='/documents' aria-label='回到我的文件'>
+               <span className='brand-mark'>a</span>
+               <span className='brand-word'>archly<span>✳</span></span>
+            </a>
+            <span className='divider' />
+            <div className='document-heading'>
+               <h1>{title}</h1>
+               <span>觀看者・唯讀</span>
+            </div>
+         </header>
+         <div className='collaboration-bar floating-surface'>
+            <output aria-label='同步狀態'>
+               {connectionStatus === 'online' ? '已連線' : '離線'}
+            </output>
+            <span className='divider' />
+            <span>觀看者・唯讀</span>
+         </div>
+         <ul className='viewer-object-list floating-surface' aria-label='畫布節點'>
+            {nodes.map((node) => (
+               <li key={node.id}>
+                  {node.props.title} (x:{Math.round(node.x)}, y:{Math.round(node.y)})
+               </li>
+            ))}
+         </ul>
+      </div>
+   )
+}
+
+export function SharedSyncCanvas({
+   documentId,
+   shareToken,
+   title,
+}: {
+   documentId: string
+   shareToken: string
+   title: string
+}) {
+   const [attempt, setAttempt] = useState(0)
+   const [identity] = useState<Identity>(() => ({ id: crypto.randomUUID(), name: '分享觀看者' }))
+   return (
+      <ConnectedCanvas
+         key={attempt}
+         workspace={null}
+         identity={identity}
+         documentId={documentId}
+         shareToken={shareToken}
+         viewerTitle={title}
          onRetry={() => setAttempt((value) => value + 1)}
       />
    )

@@ -23,6 +23,7 @@ export default defineConfig({
          env: {
             SYNC_TEST_SECRET: process.env.SYNC_TEST_SECRET,
             NEXT_PUBLIC_SUPABASE_ANON_KEY: credentials.anonKey,
+            SESSION_LEASE_MS: process.env.S2_TEST_SESSION_LEASE_MS ?? '60000',
          },
       },
       {

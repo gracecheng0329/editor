@@ -85,6 +85,7 @@ export function DocumentShell({ id, userName }: { id: string; userName: string }
          <DocumentCanvas
             id={id}
             workspace={{
+               title: document.title,
                isSharing: sharing,
                userName,
                heading: (
