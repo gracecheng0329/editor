@@ -9,22 +9,68 @@ interface Env {
    SUPABASE_ANON_KEY: string
    APP_ORIGIN: string
    ROOM_SIGNING_SECRET: string
+   SESSION_LEASE_MS?: string
 }
 interface Access {
    userId: string
-   role: 'owner' | 'editor'
+   role: 'owner' | 'editor' | 'viewer'
    expiresAt: number
    roomId: string
    documentId: string
    generation: number
 }
 const noStore = { 'Cache-Control': 'private, no-store' }
+const maxSessionLeaseMs = 60000
+
+function sessionLeaseMs(env: Env) {
+   const configured = Number(env.SESSION_LEASE_MS)
+   return Number.isFinite(configured) && configured > 0
+      ? Math.min(configured, maxSessionLeaseMs)
+      : maxSessionLeaseMs
+}
+
+async function authorizeShare(
+   request: Request,
+   env: Env,
+   documentId: string,
+): Promise<Access | Response> {
+   const token = request.headers.get('X-Share-Token')
+   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token))
+      return new Response('Not found', { status: 404 })
+   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/resolve_document_share_room`, {
+      method: 'POST',
+      headers: {
+         apikey: env.SUPABASE_ANON_KEY,
+         Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+         'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ share_token: token }),
+   })
+   if (!response.ok) return new Response('Authorization unavailable', { status: 503 })
+   const room: { id?: string; room_id?: string } | null = await response.json()
+   if (
+      !room ||
+      room.id !== documentId ||
+      typeof room.room_id !== 'string' ||
+      !/^[0-9a-f-]{36}$/.test(room.room_id)
+   )
+      return new Response('Not found', { status: 404 })
+   return {
+      userId: crypto.randomUUID(),
+      role: 'viewer',
+      expiresAt: Date.now() + sessionLeaseMs(env),
+      roomId: room.room_id,
+      documentId,
+      generation: 0,
+   }
+}
 
 async function authorize(
    request: Request,
    env: Env,
    documentId: string,
 ): Promise<Access | Response> {
+   if (request.headers.has('X-Share-Token')) return authorizeShare(request, env, documentId)
    const token = request.headers.get('Authorization')?.replace(/^Bearer /, '')
    if (!token || token.length > 8192) return new Response('Unauthorized', { status: 401 })
    const headers = { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
@@ -46,7 +92,7 @@ async function authorize(
    return {
       userId: user.id,
       role: documents[0].owner_id === user.id ? 'owner' : 'editor',
-      expiresAt: Math.min(expiry * 1000, Date.now() + 60000),
+      expiresAt: Math.min(expiry * 1000, Date.now() + sessionLeaseMs(env)),
       roomId: documents[0].room_id,
       documentId,
       generation: 0,
@@ -109,7 +155,7 @@ async function verifyTicket(
       const access: Access = JSON.parse(new TextDecoder().decode(decode(payload)))
       if (
          access.documentId !== documentId ||
-         !['owner', 'editor'].includes(access.role) ||
+         !['owner', 'editor', 'viewer'].includes(access.role) ||
          access.generation !== 0 ||
          !Number.isFinite(access.expiresAt) ||
          access.expiresAt <= Date.now() ||
@@ -147,10 +193,10 @@ const worker = {
       if (request.method === 'OPTIONS')
          return new Response(null, {
             status: 204,
-            headers: {
+         headers: {
                ...cors,
                'Access-Control-Allow-Methods': 'GET, POST',
-               'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+               'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Share-Token',
             },
          })
       if (!match) return new Response('Not found', { status: 404, headers: cors })
@@ -215,6 +261,8 @@ export class CanvasRoom extends DurableObject<Env> {
          return Response.json({ code: 'GENERATION_MISMATCH', generation }, { status: 409 })
       if (url.pathname.endsWith('/checkpoint')) {
          if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+         if (access.role === 'viewer')
+            return Response.json({ error: 'READ_ONLY' }, { status: 403 })
          // Capture authoritative accepted records before waiting for physical durability.
          // A later local edit cannot be covered by this earlier checkpoint.
          const captured = this.sqlite.getSnapshot()
@@ -246,6 +294,7 @@ export class CanvasRoom extends DurableObject<Env> {
                return server.readyState
             },
          },
+         isReadonly: access.role === 'viewer',
          objectAccess: 'read',
       })
       server.addEventListener('message', (event) => {

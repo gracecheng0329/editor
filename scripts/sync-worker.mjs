@@ -28,6 +28,7 @@ const options = {
       SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'http://127.0.0.1:54321',
       SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       APP_ORIGIN: process.env.APP_ORIGIN ?? 'http://127.0.0.1:3102',
+      SESSION_LEASE_MS: process.env.SESSION_LEASE_MS ?? '60000',
    },
    durableObjects: { ROOMS: { className: 'CanvasRoom', useSQLite: true } },
    durableObjectsPersist: persistence,

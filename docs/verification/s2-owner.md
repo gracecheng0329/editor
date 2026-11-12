@@ -1,14 +1,14 @@
 # S2 owner canvas (#24)
 
-Scope: the owner slice of #5. This does not complete #5, the parent specification, collaborator presence, share-viewer UI, existing-session revocation, or durable offline reopening.
+Scope: the owner slice of #5. This document records owner-specific behavior. Share-viewer and existing-session revocation behavior is recorded in [S2 existing-session revocation](s2-revocation.md); durable offline reopening remains separate work.
 
 ## Public contract
 
 The formal document page uses tldraw sync as its only canvas authority. The Worker resolves the authorized document's room identifier using Supabase Auth and the document table's existing RLS policies, including the live-session predicate. No service-role key or G0 credential is used in the production path. Client and server share architecture-node property validators.
 
 - `GET /api/documents/:id/sync-session`: own authenticated browser session only; returns its access token and display identity with `private, no-store` caching. RLS must authorize that document first.
-- Worker `POST /documents/:id/session`: authenticated Supabase access token in the Authorization header. Auth verifies the user and RLS verifies live membership, then Worker signs a room ticket scoped to document, room, user, role, generation and at most 60 seconds. Tickets are obtained again on reconnect. The broad access token is never in the WebSocket URL.
-- Worker WebSocket `/documents/:id?ticket=...`: signature, scope, expiry and generation checked before connecting. The Durable Object closes at ticket expiry and checks expiry on every frame. The room's generation is persisted in DO SQLite and starts at 0; generation switching belongs to S5. Membership changes on already-open sockets belong to #7.
+- Worker `POST /documents/:id/session`: authenticated Supabase access token in the Authorization header. Auth verifies the user and RLS verifies live membership, then Worker signs a room ticket scoped to document, room, user, role, generation and at most 60 seconds. Tickets are obtained again on reconnect. The broad access token is never in the WebSocket URL. Existing-session membership changes are bounded by the lease described in [S2 existing-session revocation](s2-revocation.md).
+- Worker WebSocket `/documents/:id?ticket=...`: signature, scope, expiry and generation checked before connecting. The Durable Object closes at ticket expiry and checks expiry on every frame. The room's generation is persisted in DO SQLite and starts at 0; generation switching belongs to S5.
 - Worker `POST /documents/:id/checkpoint`: fresh Supabase/RLS authorization on every request. It captures authoritative accepted document records and revision synchronously, waits for DO `storage.sync()`, and then returns that captured snapshot. It does not persist a growing collection of version snapshots; product versions remain S5 work.
 
 The UI automatically requests checkpoints after edits and retries failures. Only a healthy connection plus equality between the current public document records and a flushed authoritative checkpoint permits “已確認持久化”. A later edit immediately invalidates that indication. An older response cannot cover new records. Offline and failure states retain current in-memory edits; retry does not reset the connected editor. Closing/reopening before confirmation is outside this slice's offline guarantee.

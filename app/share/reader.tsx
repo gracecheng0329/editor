@@ -1,11 +1,19 @@
 'use client'
+import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
+import { SharedSyncCanvas } from '@/app/documents/[id]/sync-canvas'
 
 type ViewerDocument = { id: string; title: string; role: 'viewer' }
+type ResolvedShare = { document: ViewerDocument; token: string }
+
 export function ShareReader() {
-   const [document, setDocument] = useState<ViewerDocument | null>(null)
+   const [share, setShare] = useState<ResolvedShare | null>(null)
    const [error, setError] = useState('')
+   const [loading, setLoading] = useState(true)
    const load = useCallback(async () => {
+      setShare(null)
+      setError('')
+      setLoading(true)
       try {
          const token = window.location.hash.slice(1)
          const response = await fetch('/api/share/resolve', {
@@ -15,19 +23,19 @@ export function ShareReader() {
             cache: 'no-store',
          })
          if (!response.ok) {
-            setDocument(null)
             setError(
                response.status === 404
                   ? '分享連結無效或已撤銷。'
                   : '無法載入分享文件，請再試一次。',
             )
+            setLoading(false)
             return
          }
-         setDocument(await response.json())
-         setError('')
+         setShare({ document: await response.json(), token })
+         setLoading(false)
       } catch {
-         setDocument(null)
          setError('無法載入分享文件，請再試一次。')
+         setLoading(false)
       }
    }, [])
    useEffect(() => {
@@ -35,23 +43,31 @@ export function ShareReader() {
       window.addEventListener('hashchange', load)
       return () => window.removeEventListener('hashchange', load)
    }, [load])
+
+   if (share)
+      return (
+         <main className='formal-workspace'>
+            <SharedSyncCanvas
+               key={`${share.document.id}:${share.token}`}
+               documentId={share.document.id}
+               shareToken={share.token}
+               title={share.document.title}
+            />
+         </main>
+      )
    return (
-      <section className='document-content'>
-         {error && <p role='alert'>{error}</p>}
-         {document && (
-            <>
-               <p className='eyebrow'>觀看者・唯讀</p>
-               <h1>{document.title}</h1>
-               <p>此連結提供觀看資格，登入後仍須獲擁有者邀請才能編輯。</p>
-               <div className='canvas-placeholder'>
-                  <strong>畫布</strong>
-                  <p>畫布閱讀功能將於後續切片提供。</p>
-               </div>
-            </>
-         )}
-         <button type='button' className='plain-button' onClick={() => void load()}>
-            重新驗證連結
-         </button>
-      </section>
+      <main className='product-page'>
+         <nav className='product-nav'>
+            <Link href='/' className='product-brand'>◈ Archly</Link>
+            <Link href='/documents'>我的文件</Link>
+         </nav>
+         <section className='document-content'>
+            {loading && <p role='status'>正在驗證分享連結…</p>}
+            {error && <p role='alert'>{error}</p>}
+            <button type='button' className='plain-button' onClick={() => void load()}>
+               重新驗證連結
+            </button>
+         </section>
+      </main>
    )
 }
