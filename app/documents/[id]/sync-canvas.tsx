@@ -5,9 +5,12 @@ import {
    atom,
    createUserId,
    defaultShapeUtils,
+   type Editor,
    isEqual,
    type SerializedStore,
    type TLRecord,
+   type TLDrawShape,
+   type TLStoreSnapshot,
    Tldraw,
    useEditor,
    useValue,
@@ -40,15 +43,23 @@ type Checkpoint = {
    revision: number
    snapshot: { store: SerializedStore<TLRecord> }
 }
+type RetainedContent = {
+   documentId: string
+   reason: 'access' | 'generation'
+   generation: number | null
+   snapshot: TLStoreSnapshot
+}
 
 function CanvasControls({
    connectionStatus,
    confirm,
+   onConfirmed,
    workspace,
 }: {
    workspace: DocumentWorkspace
    connectionStatus: string
    confirm: (signal: AbortSignal) => Promise<Checkpoint>
+   onConfirmed: (store: SerializedStore<TLRecord>) => void
 }) {
    const editor = useEditor()
    const canvasRecords = useValue('canvas document', () => editor.store.serialize('document'), [
@@ -103,6 +114,9 @@ function CanvasControls({
          clearTimeout(timer)
       }
    }, [connectionStatus, confirmed, canvasRecords, confirm, retry])
+   useEffect(() => {
+      if (confirmed && checkpoint) onConfirmed(checkpoint.snapshot.store)
+   }, [confirmed, checkpoint, onConfirmed])
    return (
       <SyncedWorkspaceUi
          isSharing={workspace.isSharing}
@@ -332,17 +346,70 @@ function ConnectedCanvas({
       }
    }, [identity])
    const token = useRef('')
+   const editorRef = useRef<Editor | null>(null)
+   const generation = useRef<number | null>(null)
+   const confirmedRecords = useRef<SerializedStore<TLRecord> | null>(null)
+   const reconnectPaused = useRef(false)
+   const [retained, setRetained] = useState<RetainedContent | null>(null)
+   const rememberConfirmed = useCallback((store: SerializedStore<TLRecord>) => {
+      confirmedRecords.current = store
+   }, [])
+   const pauseForRetainedChanges = useCallback(
+      (reason: RetainedContent['reason'], currentGeneration: number | null) => {
+         const editor = editorRef.current
+         if (!editor) return false
+         const records = editor.store.serialize('document')
+         const hasPendingChanges =
+            reason === 'generation' ||
+            confirmedRecords.current === null ||
+            !isEqual(records, confirmedRecords.current)
+         if (!hasPendingChanges) return false
+         setRetained({
+            documentId,
+            reason,
+            generation: currentGeneration,
+            snapshot: editor.store.getStoreSnapshot('document'),
+         })
+         editor.updateInstanceState({ isReadonly: true })
+         setReadOnly(true)
+         if (reason === 'access') setAccessDenied(true)
+         reconnectPaused.current = true
+         return true
+      },
+      [documentId],
+   )
    const base = process.env.NEXT_PUBLIC_SYNC_URL
    const roomURL = `${base}/documents/${encodeURIComponent(documentId)}`
    const uri = useCallback(async () => {
+      const pause = () => new Promise<string>(() => {})
+      if (reconnectPaused.current) return pause()
       const makeUrl = (ticket: string) => {
          const url = new URL(roomURL)
          url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
          url.searchParams.set('ticket', ticket)
          return url.toString()
       }
+      const acceptTicket = async (issued: Response, viewerTicket: boolean) => {
+         if (!issued.ok) throw new Error('無法取得畫布連線資格')
+         const session = (await issued.json()) as { ticket?: string; generation?: unknown }
+         if (
+            !session.ticket ||
+            !Number.isSafeInteger(session.generation) ||
+            (session.generation as number) < 0
+         )
+            throw new Error('無效的畫布連線資格')
+         const nextGeneration = session.generation as number
+         if (generation.current !== null && generation.current !== nextGeneration) {
+            pauseForRetainedChanges('generation', nextGeneration)
+            if (reconnectPaused.current) return pause()
+            throw new Error('畫布世代已變更')
+         }
+         generation.current = nextGeneration
+         setReadOnly(viewerTicket)
+         setAccessDenied(false)
+         return makeUrl(session.ticket)
+      }
       const issueShareTicket = async () => {
-         setReadOnly(true)
          const issued = await fetch(`${roomURL}/session`, {
             method: 'POST',
             headers: { 'X-Share-Token': shareToken },
@@ -352,10 +419,7 @@ function ConnectedCanvas({
             if ([401, 403, 404].includes(issued.status)) setAccessDenied(true)
             throw new Error('分享連結無效或已撤銷')
          }
-         const { ticket } = await issued.json()
-         setReadOnly(true)
-         setAccessDenied(false)
-         return makeUrl(ticket)
+         return acceptTicket(issued, true)
       }
       if (viewer) return issueShareTicket()
 
@@ -364,6 +428,9 @@ function ConnectedCanvas({
          { cache: 'no-store' },
       )
       if (!response.ok) {
+         if ([401, 403, 404].includes(response.status)) {
+            if (pauseForRetainedChanges('access', generation.current)) return pause()
+         }
          if (shareToken && [401, 403, 404].includes(response.status))
             return issueShareTicket()
          if ([401, 403, 404].includes(response.status)) setAccessDenied(true)
@@ -377,16 +444,16 @@ function ConnectedCanvas({
          cache: 'no-store',
       })
       if (!issued.ok) {
+         if ([401, 403, 404].includes(issued.status)) {
+            if (pauseForRetainedChanges('access', generation.current)) return pause()
+         }
          if (shareToken && [401, 403, 404].includes(issued.status))
             return issueShareTicket()
          if ([401, 403, 404].includes(issued.status)) setAccessDenied(true)
          throw new Error('無法取得畫布連線資格')
       }
-      const { ticket } = await issued.json()
-      setReadOnly(false)
-      setAccessDenied(false)
-      return makeUrl(ticket)
-   }, [documentId, roomURL, shareToken, viewer])
+      return acceptTicket(issued, false)
+   }, [documentId, pauseForRetainedChanges, roomURL, shareToken, viewer])
    const confirm = useCallback(
       async (signal: AbortSignal): Promise<Checkpoint> => {
          const response = await fetch(`${roomURL}/checkpoint`, {
@@ -401,7 +468,7 @@ function ConnectedCanvas({
       [roomURL],
    )
    const store = useSync({ uri, assets, shapeUtils, bindingUtils: syncedBindingUtils, users })
-   if (accessDenied) return <AccessDenied title={title} viewer={readOnly} />
+   if (accessDenied && !retained) return <AccessDenied title={title} viewer={readOnly} />
    if (store.status !== 'synced-remote')
       return store.status === 'error' ? (
          <SyncUnavailable workspace={workspace} title={title} viewer={readOnly} onRetry={onRetry} />
@@ -418,18 +485,27 @@ function ConnectedCanvas({
             bindingUtils={syncedBindingUtils}
             hideUi
             onMount={(editor) => {
+               editorRef.current = editor
                editor.updateInstanceState({ isGridMode: true, isReadonly: readOnly })
+               return () => {
+                  if (editorRef.current === editor) editorRef.current = null
+               }
             }}
          >
             <ReadonlyCanvas readOnly={readOnly} />
             {readOnly ? (
-               <ViewerCanvasControls connectionStatus={store.connectionStatus} title={title} />
+               <ViewerCanvasControls
+                  connectionStatus={store.connectionStatus}
+                  title={title}
+                  retained={retained}
+               />
             ) : (
                workspace && (
                   <CanvasControls
                      workspace={workspace}
                      connectionStatus={store.connectionStatus}
                      confirm={confirm}
+                     onConfirmed={rememberConfirmed}
                   />
                )
             )}
@@ -510,9 +586,11 @@ export default function SyncCanvas({
 
 function ViewerCanvasControls({
    connectionStatus,
+   retained,
    title,
 }: {
    connectionStatus: string
+   retained: RetainedContent | null
    title: string
 }) {
    const editor = useEditor()
@@ -522,6 +600,14 @@ function ViewerCanvasControls({
          editor
             .getCurrentPageShapes()
             .filter((shape): shape is ArchitectureNode => shape.type === 'architecture-node'),
+      [editor],
+   )
+   const strokes = useValue(
+      'viewer canvas strokes',
+      () =>
+         editor
+            .getCurrentPageShapes()
+            .filter((shape): shape is TLDrawShape => shape.type === 'draw'),
       [editor],
    )
    return (
@@ -534,16 +620,46 @@ function ViewerCanvasControls({
             <span className='divider' />
             <div className='document-heading'>
                <h1>{title}</h1>
-               <span>觀看者・唯讀</span>
+               <span>{retained ? '待同步內容已保留' : '觀看者・唯讀'}</span>
             </div>
          </header>
          <div className='collaboration-bar floating-surface'>
             <output aria-label='同步狀態'>
-               {connectionStatus === 'online' ? '已連線' : '離線'}
+               {retained ? '已暫停同步' : connectionStatus === 'online' ? '已連線' : '離線'}
             </output>
             <span className='divider' />
-            <span>觀看者・唯讀</span>
+            <span>{retained ? '本機內容未送出' : '觀看者・唯讀'}</span>
          </div>
+         {retained && (
+            <section
+               className='sync-access-status floating-surface retained-changes'
+               aria-label='待同步內容已保留'
+            >
+               <p role='alert'>
+                  {retained.reason === 'generation'
+                     ? '畫布世代已變更。此頁的待同步修改尚未送入目前畫布，已保留在本機。'
+                     : '寫入資格已失效。此頁的待同步修改尚未送入雲端，已保留在本機。'}
+                  {' '}離開頁面前請先下載內容。
+               </p>
+               <button
+                  type='button'
+                  onClick={() => {
+                     const url = URL.createObjectURL(
+                        new Blob([JSON.stringify(retained, null, 2)], {
+                           type: 'application/json',
+                        }),
+                     )
+                     const link = document.createElement('a')
+                     link.href = url
+                     link.download = `canvas-${retained.documentId}-pending.json`
+                     link.click()
+                     setTimeout(() => URL.revokeObjectURL(url), 1000)
+                  }}
+               >
+                  下載待同步內容
+               </button>
+            </section>
+         )}
          <ul className='viewer-object-list floating-surface' aria-label='畫布節點'>
             {nodes.map((node) => (
                <li key={node.id}>
@@ -551,6 +667,18 @@ function ViewerCanvasControls({
                </li>
             ))}
          </ul>
+         {retained && (
+            <ul
+               className='viewer-object-list viewer-stroke-list floating-surface'
+               aria-label='畫布筆畫'
+            >
+               {strokes.map((stroke) => (
+                  <li key={stroke.id}>
+                     {stroke.props.color} · {stroke.props.size}
+                  </li>
+               ))}
+            </ul>
+         )}
       </div>
    )
 }

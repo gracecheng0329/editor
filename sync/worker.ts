@@ -9,6 +9,7 @@ interface Env {
    SUPABASE_ANON_KEY: string
    APP_ORIGIN: string
    ROOM_SIGNING_SECRET: string
+   TEST_CONTROL_SECRET?: string
    SESSION_LEASE_MS?: string
 }
 interface Access {
@@ -131,6 +132,21 @@ async function issueTicket(access: Access, env: Env) {
    )
    return `${payload}.${encode(new Uint8Array(signature))}`
 }
+async function currentSession(
+   access: Access,
+   env: Env,
+): Promise<{ generation: number } | Response> {
+   const request = new Request(`http://canvas.internal/documents/${access.documentId}/session`, {
+      method: 'POST',
+      headers: { 'X-Canvas-Access': JSON.stringify(access) },
+   })
+   const response = await env.ROOMS.get(env.ROOMS.idFromName(access.roomId)).fetch(request)
+   if (!response.ok) return response
+   const result = (await response.json()) as { generation?: unknown }
+   if (!Number.isSafeInteger(result.generation) || (result.generation as number) < 0)
+      return new Response('Invalid room generation', { status: 503 })
+   return { generation: result.generation as number }
+}
 async function verifyTicket(
    request: Request,
    env: Env,
@@ -156,7 +172,8 @@ async function verifyTicket(
       if (
          access.documentId !== documentId ||
          !['owner', 'editor', 'viewer'].includes(access.role) ||
-         access.generation !== 0 ||
+         !Number.isSafeInteger(access.generation) ||
+         access.generation < 0 ||
          !Number.isFinite(access.expiresAt) ||
          access.expiresAt <= Date.now() ||
          access.expiresAt > Date.now() + 60000
@@ -172,6 +189,34 @@ const worker = {
    async fetch(request: Request, env: Env) {
       const url = new URL(request.url)
       if (url.pathname === '/health') return new Response('ready', { headers: noStore })
+      const generationControl = /^\/__test\/documents\/([0-9a-f-]{36})\/generation$/.exec(
+         url.pathname,
+      )
+      if (generationControl) {
+         if (
+            !env.TEST_CONTROL_SECRET ||
+            request.headers.get('X-Test-Control-Secret') !== env.TEST_CONTROL_SECRET
+         )
+            return new Response('Not found', { status: 404, headers: noStore })
+         if (request.method !== 'POST')
+            return new Response('Method not allowed', { status: 405, headers: noStore })
+         const access = await authorize(request, env, generationControl[1])
+         if (access instanceof Response)
+            return new Response(access.body, { status: access.status, headers: noStore })
+         if (access.role !== 'owner')
+            return new Response('Forbidden', { status: 403, headers: noStore })
+         const internal = new Request(
+            `http://canvas.internal/documents/${generationControl[1]}/__test/generation`,
+            {
+               method: 'POST',
+               headers: {
+                  'X-Canvas-Access': JSON.stringify(access),
+                  'X-Test-Control-Secret': env.TEST_CONTROL_SECRET,
+               },
+            },
+         )
+         return env.ROOMS.get(env.ROOMS.idFromName(access.roomId)).fetch(internal)
+      }
       const match = /^\/documents\/([0-9a-f-]{36})(?:\/(checkpoint|session))?$/.exec(url.pathname)
       const origins = allowedOrigins(env)
       const origin = request.headers.get('Origin')
@@ -201,7 +246,7 @@ const worker = {
          })
       if (!match) return new Response('Not found', { status: 404, headers: cors })
       try {
-         const access = await (match[2]
+         let access = await (match[2]
             ? authorize(request, env, match[1])
             : verifyTicket(request, env, match[1]))
          if (access instanceof Response)
@@ -209,10 +254,24 @@ const worker = {
          if (match[2] === 'session') {
             if (request.method !== 'POST')
                return new Response('Method not allowed', { status: 405, headers: cors })
+            const session = await currentSession(access, env)
+            if (session instanceof Response)
+               return new Response(session.body, { status: session.status, headers: cors })
+            access = { ...access, generation: session.generation }
             return Response.json(
-               { ticket: await issueTicket(access, env), expiresAt: access.expiresAt },
+               {
+                  ticket: await issueTicket(access, env),
+                  generation: access.generation,
+                  expiresAt: access.expiresAt,
+               },
                { headers: cors },
             )
+         }
+         if (match[2] === 'checkpoint' && request.method === 'POST') {
+            const session = await currentSession(access, env)
+            if (session instanceof Response)
+               return new Response(session.body, { status: session.status, headers: cors })
+            access = { ...access, generation: session.generation }
          }
          // Room identifiers come from the authorized document row, never a client-supplied room.
          const internal = new Request(request)
@@ -257,6 +316,25 @@ export class CanvasRoom extends DurableObject<Env> {
       const generation = this.ctx.storage.sql
          .exec<{ generation: number }>('SELECT generation FROM canvas_state WHERE id = 1')
          .one().generation
+      if (url.pathname.endsWith('/__test/generation')) {
+         if (
+            !this.env.TEST_CONTROL_SECRET ||
+            request.headers.get('X-Test-Control-Secret') !== this.env.TEST_CONTROL_SECRET
+         )
+            return new Response('Not found', { status: 404 })
+         if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+         if (access.role !== 'owner') return new Response('Forbidden', { status: 403 })
+         const nextGeneration = generation + 1
+         this.ctx.storage.sql.exec(
+            'UPDATE canvas_state SET generation = ? WHERE id = 1',
+            nextGeneration,
+         )
+         return Response.json({ generation: nextGeneration }, { headers: noStore })
+      }
+      if (url.pathname.endsWith('/session')) {
+         if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+         return Response.json({ generation }, { headers: noStore })
+      }
       if (access.generation !== generation)
          return Response.json({ code: 'GENERATION_MISMATCH', generation }, { status: 409 })
       if (url.pathname.endsWith('/checkpoint')) {

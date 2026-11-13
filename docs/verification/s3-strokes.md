@@ -1,5 +1,7 @@
 # S3 freehand strokes and whole-stroke eraser (#8)
 
+Live-page offline editing and reconnect evidence for S3 #9 is in [s3-offline-reconnect.md](s3-offline-reconnect.md).
+
 ## Scope and public contract
 
 The formal document canvas uses tldraw's built-in `draw` shape and `eraser` tool. Stroke records remain in the existing tldraw sync schema and Durable Object room; there is no second canvas writer, custom stroke protocol, pressure brush, pixel eraser, or stroke splitting.

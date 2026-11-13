@@ -1871,6 +1871,7 @@ kbd {
    list-style: none;
 }
 .viewer-object-list li { padding: 5px 0; color: #514b5c; }
+.viewer-object-list.viewer-stroke-list { top: auto; bottom: 20px; max-height: 32dvh; }
 .sync-access-status {
    position: absolute;
    top: 104px;
@@ -1882,9 +1883,11 @@ kbd {
 .sync-access-status p { margin: 0 0 12px; color: #5c5665; }
 .sync-access-status a,
 .sync-access-status button { color: #6840b4; font-weight: 600; }
+.sync-access-status.retained-changes { top: 164px; right: 20px; left: auto; }
 @media (max-width: 780px) {
    .document-workspace .document-bar { max-width: calc(100% - 28px); }
    .document-workspace .collaboration-bar { top: 88px; right: 14px; left: auto; height: 50px; gap: 6px; }
+   .document-workspace .sync-access-status.retained-changes { top: 148px; right: 14px; left: 14px; max-width: none; }
    .document-workspace .component-library { top: 150px; }
    .document-workspace .side-panel { top: 150px; }
    .document-workspace .selection-inspector { top: 150px; }

@@ -25,6 +25,7 @@ const options = {
    port: 8789,
    bindings: {
       ROOM_SIGNING_SECRET: process.env.SYNC_TEST_SECRET,
+      TEST_CONTROL_SECRET: process.env.SYNC_TEST_SECRET,
       SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'http://127.0.0.1:54321',
       SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       APP_ORIGIN: process.env.APP_ORIGIN ?? 'http://127.0.0.1:3102',
@@ -41,6 +42,41 @@ let restarting = false
 const controller = createServer(async (request, response) => {
    if (request.headers.authorization !== `Bearer ${process.env.SYNC_TEST_SECRET}`) {
       response.writeHead(401).end()
+      return
+   }
+   if (request.method === 'POST' && request.url === '/generation') {
+      try {
+         const chunks = []
+         for await (const chunk of request) chunks.push(chunk)
+         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+         if (
+            typeof body.documentId !== 'string' ||
+            !/^[0-9a-f-]{36}$/.test(body.documentId) ||
+            typeof body.accessToken !== 'string' ||
+            body.accessToken.length > 8192
+         ) {
+            response.writeHead(400).end('Invalid generation request')
+            return
+         }
+         const result = await fetch(
+            `http://127.0.0.1:8789/__test/documents/${body.documentId}/generation`,
+            {
+               method: 'POST',
+               headers: {
+                  Origin: options.bindings.APP_ORIGIN,
+                  Authorization: `Bearer ${body.accessToken}`,
+                  'X-Test-Control-Secret': process.env.SYNC_TEST_SECRET,
+               },
+            },
+         )
+         response
+            .writeHead(result.status, {
+               'Content-Type': result.headers.get('content-type') ?? 'text/plain',
+            })
+            .end(await result.text())
+      } catch {
+         response.writeHead(400).end('Invalid generation request')
+      }
       return
    }
    if (request.method !== 'POST' || request.url !== '/restart') {
