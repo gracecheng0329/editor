@@ -29,6 +29,8 @@ Browser coverage is in `tests/s2/revocation.spec.ts` and `tests/s2/share-viewer.
 - The read-only indicator locator is scoped to the share canvas header, where the text is unique. This nested header does not have an implicit `banner` role.
 - Both viewer and revoked-editor-with-share cases use an independent browser probe to attempt a real write through the SDK's public store API. Playwright observes the attack marker leaving the browser without inspecting protocol fields, waits for the optimistic edit to be discarded, then the owner reloads the formal document and checks that the attempted node was not saved. The probe is bundled from `tests/s2/fixtures/sync-probe.tsx` and served only by Playwright request interception; it adds no deployed route or authorization bypass.
 
+Previous browser attempts on 2026-11-12 failed before completion: Chromium launch initially returned `SIGABRT`; after the browser was available, the local LNA permission and two test setup issues still needed correction. These are historical results, superseded by the current full local run below.
+
 Executed without `S2_TEST_SESSION_LEASE_MS`:
 
 ```sh
@@ -37,8 +39,20 @@ S2_PRODUCTION=1 node node_modules/@playwright/test/cli.js test \
   tests/s2/revocation-service.spec.ts tests/s2/share-viewer.spec.ts tests/s2/revocation.spec.ts
 ```
 
-Result: the service test **passed using the default 60-second lease** (about one minute). All three browser tests failed during Chrome launch (`SIGABRT`, `kill EPERM`), before their bodies ran. The browser probe and updated locator therefore still require runtime verification in an environment where Chromium can launch. These results do not constitute a full S2 pass or red-before-green browser evidence.
+Historical result: the service test **passed using the default 60-second lease** (about one minute). The initial 2026-11-12 browser run failed during Chrome launch (`SIGABRT`, `kill EPERM`), before its bodies ran; a later 2026-11-13 run below completed the browser coverage.
 
 After the corrections, application and Worker TypeScript checks, whole-repository Biome lint (110 files), `git diff --check`, and the independent probe's browser bundle compilation passed. The product source was unchanged during this correction pass, so the earlier production build was not rerun.
 
 Local Standards and Spec reviews used base `ca0185b761ea533ef7eafe23859d989d9c46bfc8` and included untracked source files. Both initially reported the three issues above; both rechecked the fixes and reported no remaining actionable findings. Offline pending-content preservation remains S3 scope. The pre-existing local origin change in `sync/wrangler.jsonc` is excluded from this task's commit.
+
+## Current local browser result (2026-11-13)
+
+After starting the repository's isolated local Supabase services and applying the local migrations, all S2 browser acceptance passed with the default 60-second lease:
+
+```sh
+S1_CREDENTIALS_FILE=.local-supabase/credentials.json S2_PRODUCTION=1 \
+node node_modules/@playwright/test/cli.js test --config playwright.s2.config.ts \
+  tests/s2/revocation-service.spec.ts tests/s2/share-viewer.spec.ts tests/s2/revocation.spec.ts
+```
+
+Result: **4 passed (3.4m)**. The local browser probe explicitly receives Chrome's `local-network-access` permission so it can call the loopback Worker from its isolated context. The revoked-share test also opens the owner object panel before editing and allows 180 seconds for all three sessions plus lease expiry. This confirms local S2 behavior; it does not claim a remote deployment smoke.

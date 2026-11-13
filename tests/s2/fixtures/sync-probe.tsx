@@ -3,12 +3,13 @@ import { createRoot } from 'react-dom/client'
 import { createShapeId, useValue } from 'tldraw'
 import { canvasSchema } from '../../../packages/canvas/schema'
 
-const { documentId, shareToken, title } = JSON.parse(
+const { documentId, shareToken, title, kind = 'node' } = JSON.parse(
    decodeURIComponent(location.hash.slice(1)),
 ) as {
    documentId: string
    shareToken: string
    title: string
+   kind?: 'node' | 'stroke'
 }
 const assets = {
    upload: async (): Promise<never> => {
@@ -38,15 +39,44 @@ function Probe() {
             .filter((shape) => shape.type === 'architecture-node') ?? [],
       [store],
    )
+   const strokes = useValue(
+      'probe strokes',
+      () =>
+         store?.query
+            .records('shape')
+            .get()
+            .filter((shape) => shape.type === 'draw') ?? [],
+      [store],
+   )
    return (
       <>
+         <output aria-label='Probe status'>{sync.status}</output>
+         {sync.status === 'error' && (
+            <output aria-label='Probe error'>{sync.error.message}</output>
+         )}
          <output aria-label='Probe nodes'>
             {nodes.map((node) => String(node.props.title)).join(',')}
          </output>
+         <output aria-label='Probe strokes'>
+            {strokes.map((stroke) => `${stroke.props.color}:${JSON.stringify(stroke.meta)}`).join(',')}
+         </output>
          <button
             type='button'
-            disabled={!store || nodes.length === 0}
+            disabled={!store || (kind === 'stroke' ? strokes.length === 0 : nodes.length === 0)}
             onClick={() => {
+               if (kind === 'stroke') {
+                  const source = strokes[0]
+                  if (!store || !source) throw new Error('Expected a synchronized source stroke')
+                  // Clone a valid stroke through the public store API and attach a unique marker.
+                  store.put([
+                     {
+                        ...source,
+                        id: createShapeId(),
+                        meta: { ...source.meta, unauthorizedProbe: title },
+                     },
+                  ])
+                  return
+               }
                const source = nodes[0]
                if (!store || !source) throw new Error('Expected a synchronized source node')
                // Public store mutation deliberately bypasses the product's readonly UI.

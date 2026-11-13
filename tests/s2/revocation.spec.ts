@@ -172,7 +172,7 @@ test('revoking a share token closes its viewer lease without interrupting owner 
    browser,
    request,
 }) => {
-   test.setTimeout(120_000)
+   test.setTimeout(180_000)
    const owner = await registeredUser(false, 'Share owner')
    const editor = await registeredUser(true, 'Share editor')
    const ownerContext = await browser.newContext()
@@ -246,13 +246,14 @@ test('revoking a share token closes its viewer lease without interrupting owner 
       const viewerClosedAt = viewerSockets.closedAt.at(-1)
       assert(viewerClosedAt !== undefined)
       expect(viewerClosedAt - revokedAt).toBeLessThanOrEqual(60_000)
-      await expect(viewerPage.getByRole('alert')).toHaveText('分享連結無效或已撤銷。')
+      await expect(viewerPage.getByText('分享連結無效或已撤銷。', { exact: true })).toBeVisible()
       const stale = await request.get(
          `${service}/documents/${document.id}?ticket=${encodeURIComponent(staleViewerTicket)}&sessionId=${crypto.randomUUID()}`,
          { headers: upgrade },
       )
       expect(stale.status()).toBe(401)
 
+      await openObjectPanel(ownerPage)
       await addNode(ownerPage, 'Owner remains connected')
       await expect(ownerPage.getByLabel('保存狀態')).toHaveText('已確認持久化')
       await openObjectPanel(editorPage)

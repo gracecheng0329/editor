@@ -2,9 +2,14 @@
 
 import { useState } from 'react'
 import {
+   DefaultColorStyle,
+   DefaultSizeStyle,
    createShapeId,
    getArrowInfo,
    renderPlaintextFromRichText,
+   type TLDefaultColorStyle,
+   type TLDefaultSizeStyle,
+   type TLDrawShape,
    type TLArrowShape,
    type TLShapeId,
    toRichText,
@@ -13,11 +18,51 @@ import {
 } from 'tldraw'
 import type { ArchitectureNode } from '@/app/web/whiteboard/architecture-shape'
 
+const strokeColors: { value: TLDefaultColorStyle; label: string }[] = [
+   { value: 'black', label: '黑色' },
+   { value: 'grey', label: '灰色' },
+   { value: 'blue', label: '藍色' },
+   { value: 'light-blue', label: '淺藍色' },
+   { value: 'green', label: '綠色' },
+   { value: 'light-green', label: '淺綠色' },
+   { value: 'orange', label: '橘色' },
+   { value: 'red', label: '紅色' },
+   { value: 'light-red', label: '淺紅色' },
+   { value: 'violet', label: '紫色' },
+   { value: 'light-violet', label: '淺紫色' },
+   { value: 'yellow', label: '黃色' },
+   { value: 'white', label: '白色' },
+]
+const strokeColorLabels = Object.fromEntries(
+   strokeColors.map(({ value, label }) => [value, label]),
+) as Record<TLDefaultColorStyle, string>
+const strokeSizes: { value: TLDefaultSizeStyle; label: string }[] = [
+   { value: 's', label: '細' },
+   { value: 'm', label: '中' },
+   { value: 'l', label: '粗' },
+   { value: 'xl', label: '特粗' },
+]
+const strokeSizeLabels = Object.fromEntries(
+   strokeSizes.map(({ value, label }) => [value, label]),
+) as Record<TLDefaultSizeStyle, string>
+
 /** Editing uses native records and bindings, shared with the authoritative room schema. */
 export function ObjectTools() {
    const editor = useEditor()
    const shapes = useValue('canvas objects', () => editor.getCurrentPageShapes(), [editor])
    const selected = useValue('selected object', () => editor.getOnlySelectedShape(), [editor])
+   const selectedStroke = selected?.type === 'draw' ? selected : null
+   const nextStrokeColor = useValue(
+      'next stroke color',
+      () => editor.getStyleForNextShape(DefaultColorStyle),
+      [editor],
+   )
+   const nextStrokeSize = useValue(
+      'next stroke size',
+      () => editor.getStyleForNextShape(DefaultSizeStyle),
+      [editor],
+   )
+   const strokes = shapes.filter((shape): shape is TLDrawShape => shape.type === 'draw')
    const connections = useValue(
       'connection descriptions',
       () =>
@@ -111,6 +156,8 @@ export function ObjectTools() {
             <legend>畫布操作</legend>
             {[
                ['select', '選取工具'],
+               ['draw', '自由手繪工具'],
+               ['eraser', '整筆橡皮擦工具'],
                ['arrow', '連線工具'],
                ['text', '文字工具'],
                ['hand', '平移工具'],
@@ -128,6 +175,55 @@ export function ObjectTools() {
             <button type='button' onClick={() => editor.zoomToFit()}>
                檢視全部
             </button>
+         </fieldset>
+         <fieldset aria-label='筆畫樣式'>
+            <legend>筆畫樣式</legend>
+            <label>
+               筆畫顏色
+               <select
+                  aria-label='筆畫顏色'
+                  value={selectedStroke?.props.color ?? nextStrokeColor}
+                  onChange={(event) => {
+                     const color = event.target.value as TLDefaultColorStyle
+                     editor.setStyleForNextShapes(DefaultColorStyle, color)
+                     if (selectedStroke)
+                        editor.updateShape<TLDrawShape>({
+                           id: selectedStroke.id,
+                           type: 'draw',
+                           props: { color },
+                        })
+                  }}
+               >
+                  {strokeColors.map(({ value, label }) => (
+                     <option key={value} value={value}>
+                        {label}
+                     </option>
+                  ))}
+               </select>
+            </label>
+            <label>
+               筆畫粗細
+               <select
+                  aria-label='筆畫粗細'
+                  value={selectedStroke?.props.size ?? nextStrokeSize}
+                  onChange={(event) => {
+                     const size = event.target.value as TLDefaultSizeStyle
+                     editor.setStyleForNextShapes(DefaultSizeStyle, size)
+                     if (selectedStroke)
+                        editor.updateShape<TLDrawShape>({
+                           id: selectedStroke.id,
+                           type: 'draw',
+                           props: { size },
+                        })
+                  }}
+               >
+                  {strokeSizes.map(({ value, label }) => (
+                     <option key={value} value={value}>
+                        {label}
+                     </option>
+                  ))}
+               </select>
+            </label>
          </fieldset>
          <fieldset>
             <legend>有向連線</legend>
@@ -336,6 +432,24 @@ export function ObjectTools() {
                      </button>
                   </li>
                ))}
+         </ul>
+         <ul aria-label='畫布筆畫'>
+            {strokes.map((stroke, index) => {
+               const bounds = editor.getShapeGeometry(stroke).bounds
+               return (
+                  <li key={stroke.id}>
+                     <button
+                        type='button'
+                        aria-label={`選取筆畫 ${strokeColorLabels[stroke.props.color]} ${index + 1}`}
+                        onClick={() => editor.select(stroke.id)}
+                     >
+                        第 {index + 1} 筆畫・{strokeColorLabels[stroke.props.color]}・
+                        {strokeSizeLabels[stroke.props.size]}・x:{Math.round(stroke.x)}, y:
+                        {Math.round(stroke.y)}・{Math.round(bounds.w)} × {Math.round(bounds.h)}
+                     </button>
+                  </li>
+               )
+            })}
          </ul>
       </>
    )
