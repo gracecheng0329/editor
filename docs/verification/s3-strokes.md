@@ -22,8 +22,12 @@ node scripts/local-supabase.mjs up
 node scripts/migrate-local-supabase.mjs
 NEXT_PUBLIC_SYNC_URL=http://127.0.0.1:8789 node node_modules/next/dist/bin/next build --webpack
 S1_CREDENTIALS_FILE=.local-supabase/credentials.json S2_PRODUCTION=1 \
+  node node_modules/@playwright/test/cli.js test --config playwright.s3.config.ts tests/s3/smoke.spec.ts
+S1_CREDENTIALS_FILE=.local-supabase/credentials.json S2_PRODUCTION=1 \
   node node_modules/@playwright/test/cli.js test --config playwright.s3.config.ts
 ```
+
+The focused Chrome smoke test creates temporary local Auth identities and a document, draws one stroke, checks the authoritative local SQLite checkpoint, and reloads the document. Run it after the local app build when validating the basic S3 path; the fixtures clean up the test identities and document when finished.
 
 Run the five-minute baseline separately:
 
@@ -47,6 +51,8 @@ Start the formal Next app and the real local Worker as described in [the S2 owne
 ## Local verification (2026-11-13)
 
 Local Supabase, test-generated identities, the production Next app, and the real Miniflare/SQLite sync Worker were used throughout. The S2 revocation/viewer prerequisite passed **4/4 browser tests (3.4m)** with its default 60-second session lease. The S3 functional suite passed **4/4 tests (24.3s)**, covering two-session draw/style sync, whole-stroke move/scale/delete/erase, reload plus actual Worker restart persistence, and server rejection of a viewer's public-store stroke write.
+
+The focused S3 smoke passed **1/1 test (16.8s)** in headed Chrome, covering local authentication, stroke drawing, checkpoint persistence, and reload.
 
 AC-15 passed with **5 sessions, 300 nodes, 100 connections, 100 strokes, and a 300-second operation window**. It recorded 1,500 peer-convergence samples, p95 **153.8 ms**, maximum **784.8 ms**, no cadence/convergence failures, and no browser errors. The run used Node 24.18.0, Chrome 157.0.8103.51, Next 16.4.5, tldraw sync 5.5.2, Apple M5 / 10 cores / 24 GiB RAM. Full details are in [s3-8-load.json](s3-8-load.json).
 

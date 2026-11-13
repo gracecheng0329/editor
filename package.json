@@ -7,10 +7,7 @@
       "build": "next build",
       "start": "next start",
       "lint": "biome lint . --error-on-warnings",
-      "test:s1": "playwright test --config playwright.s1.config.ts",
-      "test:s2:remote": "playwright test --config playwright.s2-remote.config.ts",
-      "db:migrate:local": "node scripts/migrate-local-supabase.mjs",
-      "test:g0": "playwright test --config playwright.g0.config.ts"
+      "db:migrate:local": "node scripts/migrate-local-supabase.mjs"
    },
    "dependencies": {
       "@supabase/ssr": "0.12.7",
