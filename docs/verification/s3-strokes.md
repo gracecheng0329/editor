@@ -47,7 +47,7 @@ Start the formal Next app and the real local Worker as described in [the S2 owne
 
 1. Choose a color and thickness, select **自由手繪工具**, and draw. Repeat from the other session using a different style; both canvases should show each whole stroke and the confirmed-save state.
 2. Select a stroke from **畫布筆畫**, edit its position and width, then delete it. The other session should show the same movement, scale, and removal.
-3. Draw another stroke, select **整筆橡皮擦工具**, and cross a short section of it. The complete stroke should disappear from both sessions.
+3. Draw another stroke, select the eraser, and cross a short section of it. The complete marker stroke should disappear from both sessions; a nearby sticky note and other shapes should keep their full color and remain.
 4. Wait for confirmed persistence, reopen the document, restart the local test Worker, and reopen again. The confirmed strokes and their styles should remain.
 
 ## Local verification (2026-11-13)
