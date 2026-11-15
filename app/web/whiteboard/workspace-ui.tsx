@@ -15,6 +15,7 @@ import {
    Eye,
    GitBranch,
    Hand,
+   Highlighter,
    History,
    LayoutGrid,
    Link2,
@@ -25,7 +26,6 @@ import {
    Minus,
    MousePointer2,
    MoveUpRight,
-   Pencil,
    Plus,
    Redo2,
    Search,
@@ -333,6 +333,41 @@ const WorkspaceChrome = track(function WorkspaceChrome({
       })
    }, [editor, setThreads])
 
+   useEffect(
+      () =>
+         editor.sideEffects.registerBeforeDeleteHandler('shape', (shape, source) => {
+            if (
+               source === 'user' &&
+               editor.getCurrentToolId() === 'eraser' &&
+               editor.getErasingShapeIds().includes(shape.id) &&
+               shape.type !== 'draw'
+            ) {
+               return false
+            }
+         }),
+      [editor],
+   )
+
+   useEffect(() => {
+      const setErasingShapes = editor.setErasingShapes
+      editor.setErasingShapes = (shapes) => {
+         if (editor.getCurrentToolId() !== 'eraser') {
+            return setErasingShapes.call(editor, shapes)
+         }
+
+         const drawShapeIds = shapes.flatMap((shapeOrId) => {
+            const shape = typeof shapeOrId === 'string' ? editor.getShape(shapeOrId) : shapeOrId
+            return shape?.type === 'draw' ? [shape.id] : []
+         })
+
+         return setErasingShapes.call(editor, drawShapeIds)
+      }
+
+      return () => {
+         editor.setErasingShapes = setErasingShapes
+      }
+   }, [editor])
+
    useEffect(() => {
       const onKey = (event: KeyboardEvent) => {
          const target = event.target as HTMLElement | null
@@ -369,7 +404,7 @@ const WorkspaceChrome = track(function WorkspaceChrome({
             n: 'note',
             r: 'geo',
          }
-         if (remote && ['p', 'e', 'n', 'r'].includes(event.key.toLowerCase())) return
+         if (remote && event.key.toLowerCase() === 'r') return
          if (tools[event.key.toLowerCase()]) {
             event.preventDefault()
             editor.setCurrentTool(tools[event.key.toLowerCase()])
@@ -466,13 +501,17 @@ const WorkspaceChrome = track(function WorkspaceChrome({
    const toolbar: { tool: string; label: string; shortcut: string; icon: LucideIcon }[] = [
       { tool: 'select', label: '選取', shortcut: 'V', icon: MousePointer2 },
       { tool: 'hand', label: '平移', shortcut: 'H', icon: Hand },
-      { tool: 'draw', label: '自由手繪', shortcut: 'P', icon: Pencil },
-      { tool: 'eraser', label: '整筆橡皮擦', shortcut: 'E', icon: Eraser },
+      { tool: 'draw', label: '標記筆', shortcut: 'P', icon: Highlighter },
+      { tool: 'eraser', label: '標記筆橡皮擦', shortcut: 'E', icon: Eraser },
       { tool: 'note', label: '便利貼', shortcut: 'N', icon: StickyNote },
       { tool: 'geo', label: '形狀', shortcut: 'R', icon: Square },
       { tool: 'arrow', label: '方向連線', shortcut: 'A', icon: MoveUpRight },
       { tool: 'text', label: '文字', shortcut: 'T', icon: Type },
    ]
+   const visibleToolbar = toolbar.filter(
+      ({ tool }) =>
+         !remote || ['select', 'hand', 'draw', 'eraser', 'note', 'arrow', 'text'].includes(tool),
+   )
 
    return (
       <div className='workspace-ui' onPointerDown={(event) => event.stopPropagation()}>
@@ -712,12 +751,7 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                </div>
                <div className='library-section'>
                   <span className='eyebrow'>讓想法更清楚</span>
-                  <button
-                     type='button'
-                     disabled={!!remote}
-                     title={remote ? '便利貼尚未交付' : undefined}
-                     onClick={() => editor.setCurrentTool('note')}
-                  >
+                  <button type='button' onClick={() => editor.setCurrentTool('note')}>
                      <StickyNote size={17} />
                      <span>便利貼</span>
                      <kbd>N</kbd>
@@ -1079,24 +1113,20 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                />
             </div>
             <nav className='drawing-toolbar floating-surface' aria-label='畫布工具列'>
-               {toolbar
-                  .filter(
-                     ({ tool }) => !remote || ['select', 'hand', 'arrow', 'text'].includes(tool),
-                  )
-                  .map(({ tool, label, shortcut, icon: Icon }, index) => (
-                     <button
-                        type='button'
-                        key={tool}
-                        className={`tool-button ${currentTool === tool ? 'selected' : ''} ${index === 4 ? 'tool-group-start' : ''}`}
-                        aria-label={`${label} ${shortcut}`}
-                        aria-pressed={currentTool === tool}
-                        title={`${label} (${shortcut})`}
-                        onClick={() => editor.setCurrentTool(tool)}
-                     >
-                        <Icon size={23} strokeWidth={1.65} />
-                        <span className='tool-shortcut'>{shortcut}</span>
-                     </button>
-                  ))}
+               {visibleToolbar.map(({ tool, label, shortcut, icon: Icon }) => (
+                  <button
+                     type='button'
+                     key={tool}
+                     className={`tool-button ${currentTool === tool ? 'selected' : ''} ${tool === 'note' ? 'tool-group-start' : ''}`}
+                     aria-label={`${label} ${shortcut}`}
+                     aria-pressed={currentTool === tool}
+                     title={`${label} (${shortcut})`}
+                     onClick={() => editor.setCurrentTool(tool)}
+                  >
+                     <Icon size={23} strokeWidth={1.65} />
+                     <span className='tool-shortcut'>{shortcut}</span>
+                  </button>
+               ))}
                <span className='divider' />
                <IconButton
                   icon={MessageCircle}
@@ -1111,7 +1141,10 @@ const WorkspaceChrome = track(function WorkspaceChrome({
             </nav>
          </div>
          {(currentTool === 'draw' || currentTool === 'arrow' || currentTool === 'geo') && (
-            <section className='style-popover floating-surface' aria-label='筆畫樣式'>
+            <section
+               className='style-popover floating-surface'
+               aria-label={currentTool === 'draw' ? '標記筆樣式' : '線條樣式'}
+            >
                <span>顏色</span>
                {(
                   [
@@ -1127,7 +1160,7 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                      key={color.value}
                      className={`color-swatch ${editor.getStyleForNextShape(DefaultColorStyle) === color.value ? 'selected' : ''}`}
                      style={{ backgroundColor: color.css }}
-                     aria-label={`筆畫顏色 ${color.value}`}
+                     aria-label={`${currentTool === 'draw' ? '標記筆' : '線條'}顏色 ${color.value}`}
                      onClick={() => {
                         editor.setStyleForNextShapes(DefaultColorStyle, color.value)
                         editor.setStyleForSelectedShapes(DefaultColorStyle, color.value)
@@ -1140,7 +1173,7 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                      type='button'
                      key={size}
                      className={`width-swatch ${editor.getStyleForNextShape(DefaultSizeStyle) === size ? 'selected' : ''}`}
-                     aria-label={`筆畫粗細 ${size}`}
+                     aria-label={`${currentTool === 'draw' ? '標記筆' : '線條'}粗細 ${size}`}
                      onClick={() => editor.setStyleForNextShapes(DefaultSizeStyle, size)}
                   >
                      <span style={{ height: index * 2 + 2 }} />
@@ -1258,17 +1291,12 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                      參考 FigJam 的輕量浮動介面，為系統架構討論而設計。
                   </p>
                   <div className='shortcut-grid'>
-                     {toolbar
-                        .filter(
-                           ({ tool }) =>
-                              !remote || ['select', 'hand', 'arrow', 'text'].includes(tool),
-                        )
-                        .map((tool) => (
-                           <div key={tool.tool}>
-                              <span>{tool.label}</span>
-                              <kbd>{tool.shortcut}</kbd>
-                           </div>
-                        ))}
+                     {visibleToolbar.map((tool) => (
+                        <div key={tool.tool}>
+                           <span>{tool.label}</span>
+                           <kbd>{tool.shortcut}</kbd>
+                        </div>
+                     ))}
                      <div>
                         <span>復原／重做</span>
                         <kbd>⌘ Z</kbd>
@@ -1284,13 +1312,13 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                         <strong>目前可操作</strong>
                         <p>
                            {remote
-                              ? '架構節點、有向連線、文字、多人游標與可靠保存。雙擊節點修改名稱；使用右上物件與連線設定編輯座標、尺寸及標籤。'
-                              : '本機節點、連線、文字、手繪、畫布操作、留言與里程碑預覽。雙擊節點修改名稱。'}
+                              ? '架構節點、標記筆及其整筆橡皮擦、便利貼、有向連線、文字、多人游標與可靠保存。橡皮擦不會移除便利貼或其他形狀。雙擊節點修改名稱；使用右上物件與連線設定編輯座標、尺寸及標籤。'
+                              : '本機節點、連線、文字、標記筆及其整筆橡皮擦、便利貼、畫布操作、留言與里程碑預覽。橡皮擦不會移除便利貼或其他形狀。雙擊節點修改名稱。'}
                         </p>
                         <strong>接下來串接</strong>
                         <p>
                            {remote
-                              ? '筆畫、個人復原／重做（S3）、留言（S4）及版本歷史（S5）尚未交付。'
+                              ? '個人復原／重做（S3）、留言（S4）及版本歷史（S5）尚未交付。'
                               : 'GitHub 登入、多人游標、雲端保存、權限、留言即時更新與安全版本還原。此介面不代表 G0／S1–S5 驗收完成。'}
                         </p>
                      </div>
