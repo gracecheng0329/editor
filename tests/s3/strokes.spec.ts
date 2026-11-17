@@ -166,7 +166,15 @@ test('the sync service rejects a viewer stroke write sent through the public sto
       const viewerPage = await viewerContext.newPage()
       await viewerPage.goto(`/share#${share.data.token}`)
       await expect(viewerPage.getByLabel('分享畫布')).toBeVisible()
-      await expect(viewerPage.getByRole('button', { name: '自由手繪工具', exact: true })).toHaveCount(0)
+      await expect(
+         viewerPage.getByRole('button', { name: '自由手繪工具', exact: true }),
+      ).toHaveCount(0)
+      await expect(
+         viewerPage.getByRole('button', { name: '復原我的操作', exact: true }),
+      ).toHaveCount(0)
+      await expect(
+         viewerPage.getByRole('button', { name: '重做我的操作', exact: true }),
+      ).toHaveCount(0)
 
       await attemptReadOnlyStrokeWrite(
          browser,

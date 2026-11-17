@@ -65,6 +65,8 @@ function CanvasControls({
    const canvasRecords = useValue('canvas document', () => editor.store.serialize('document'), [
       editor,
    ])
+   const canUndo = useValue('canvas can undo', () => editor.canUndo(), [editor])
+   const canRedo = useValue('canvas can redo', () => editor.canRedo(), [editor])
    const nodes = useValue(
       'canvas nodes',
       () =>
@@ -151,6 +153,25 @@ function CanvasControls({
          }
          tools={
             <section className='canvas-controls' aria-label='節點工具'>
+               <fieldset aria-label='個人復原'>
+                  <legend>個人復原</legend>
+                  <button
+                     type='button'
+                     aria-label='復原我的操作'
+                     disabled={!canUndo}
+                     onClick={() => editor.undo()}
+                  >
+                     復原
+                  </button>
+                  <button
+                     type='button'
+                     aria-label='重做我的操作'
+                     disabled={!canRedo}
+                     onClick={() => editor.redo()}
+                  >
+                     重做
+                  </button>
+               </fieldset>
                <label>
                   新增節點名稱
                   <input
@@ -161,14 +182,15 @@ function CanvasControls({
                </label>
                <button
                   type='button'
-                  onClick={() =>
+                  onClick={() => {
+                     editor.markHistoryStoppingPoint('create-node')
                      editor.createShape<ArchitectureNode>({
                         type: 'architecture-node',
                         x: 100 + (nodes.length % 3) * 280,
                         y: 180 + Math.floor(nodes.length / 3) * 160,
                         props: { title: name },
                      })
-                  }
+                  }}
                >
                   新增節點
                </button>
@@ -179,6 +201,7 @@ function CanvasControls({
                         <input
                            aria-label='選取節點名稱'
                            value={selected.props.title}
+                           onFocus={() => editor.markHistoryStoppingPoint('edit-node-title')}
                            onChange={(event) =>
                               editor.updateShape<ArchitectureNode>({
                                  id: selected.id,
@@ -190,17 +213,24 @@ function CanvasControls({
                      </label>
                      <button
                         type='button'
-                        onClick={() =>
+                        onClick={() => {
+                           editor.markHistoryStoppingPoint('move-node')
                            editor.updateShape({
                               id: selected.id,
                               type: selected.type,
                               x: selected.x + 40,
                            })
-                        }
+                        }}
                      >
                         向右移動節點
                      </button>
-                     <button type='button' onClick={() => editor.deleteShapes([selected.id])}>
+                     <button
+                        type='button'
+                        onClick={() => {
+                           editor.markHistoryStoppingPoint('delete-node')
+                           editor.deleteShapes([selected.id])
+                        }}
+                     >
                         刪除選取節點
                      </button>
                   </>

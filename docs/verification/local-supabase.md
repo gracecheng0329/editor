@@ -1,6 +1,6 @@
 # 使用 Apple container 的 local Supabase
 
-此環境供 S1 的真實 Auth／Postgres／RLS 整合測試使用。使用本機 Apple `container`，不依賴 Docker、Compose、Colima 或 Supabase CLI。需要 macOS 26+、Apple silicon、已安裝的 `container` 與 Node.js。
+此環境供 S1 的真實 Auth／Postgres／RLS 與 S4 Realtime 整合測試使用。使用本機 Apple `container`，不依賴 Docker、Compose、Colima 或 Supabase CLI。需要 macOS 26+、Apple silicon、已安裝的 `container` 與 Node.js。
 
 ```sh
 node scripts/local-supabase.mjs up
@@ -24,6 +24,7 @@ node scripts/verify-local-supabase.mjs --restart
 | PostgreSQL | 127.0.0.1:54322 |
 | Studio | http://127.0.0.1:54323 |
 | Mailpit | http://127.0.0.1:54324 |
+| Realtime health | http://127.0.0.1:54325/api/tenants/realtime-dev/health |
 
 服務連接埠只綁定 IPv4 loopback。這是本機開發環境，Studio 不另設登入，email signup 自動確認。GitHub OAuth 可透過私密的 `.local-supabase/github-oauth.env` 配置專用 App client ID／secret；設定與真實登入驗收見 [S1 OAuth／部署引導](s1-oauth-deployment.md)。本環境的 email 測試身分不能當成 GitHub OAuth 驗收。
 
@@ -39,13 +40,13 @@ node scripts/verify-local-supabase.mjs --restart
 
 ## 服務範圍與來源
 
-提供 Postgres、GoTrue Auth、PostgREST、Kong API gateway、postgres-meta、Studio 與 Mailpit。Storage、Realtime、Edge Functions、Analytics、Supavisor 不在此 S1 最小環境內；相關 API 不會假裝成功。Supabase CLI 的 `supabase start` 仍需要 Docker API，不能直接把 Apple `container` 當成 Docker CLI 使用。
+提供 Postgres、GoTrue Auth、PostgREST、Realtime、Kong API gateway、postgres-meta、Studio 與 Mailpit。Realtime 使用官方 `supabase/realtime:v2.148.3` 映像，內部連接本機 Postgres，WebSocket 經 Kong `/realtime/v1/` 入口；health probe 綁定 loopback 的 54325。Storage、Edge Functions、Analytics、Supavisor 不在此環境內。Supabase CLI 的 `supabase start` 仍需要 Docker API，不能直接把 Apple `container` 當成 Docker CLI 使用。
 
 Supabase 服務映像版本與角色初始化 SQL 對照官方設定 commit [`f9e0376`](https://github.com/supabase/supabase/tree/f9e0376951a1fdcc488c335ca2de4e4dc4da12e6/docker)。Gateway 採用 Kong 2.8.1 的精簡 Auth／REST 路由，而非執行完整官方 Compose；所有內部相依使用實際容器 IP，避免假設 Apple container 支援 Compose 的服務名稱解析。
 
 Apple named volume 根目錄含 `lost+found`，因此設定 `PGDATA` 與 Postgres `data_directory` 同時指向卷內的 `database` 子目錄；首次建立時明確將映像內 `/etc/postgresql-custom` 複製到設定卷，避免依賴 Docker 的自動 copy-up。官方 `webhooks.sql` 先於 `roles.sql` 初始化，以建立角色，再設定密碼。
 
-若啟動失敗，使用 `container logs editor-supabase-<service>` 檢查指定服務。`status` 會檢查各容器狀態及 Auth、REST、Studio、Mail 的 HTTP 健康，不代表產品 #3 的全部驗收已完成。
+若啟動失敗，使用 `container logs editor-supabase-<service>` 檢查指定服務。`status` 會檢查各容器狀態及 Auth、REST、Realtime、Studio、Mail 的 HTTP 健康，不代表產品 #3 的全部驗收已完成。Realtime 服務版本與撤權整合結果以各自的驗證紀錄為準；本機版本不能代表託管 Supabase 的版本或服務保證。
 
 ## 驗證紀錄（2026-10-27）
 
@@ -69,3 +70,7 @@ Apple named volume 根目錄含 `lost+found`，因此設定 `PGDATA` 與 Postgre
 獨立規格審查無剩餘可採取行動的發現；首次初始化的 named volume、固定資料路徑及角色建立順序問題已修正，並由上述實際啟動／重啟驗證確認。
 
 這些結果僅完成本機服務基礎；未實作或宣稱完成 #3 的登入頁、文件功能、產品 RLS 與 GitHub OAuth smoke test。GitHub app 讀取 #3 仍回傳 404，CLI 也尚未登入。
+
+## Realtime 擴充（2026-11-16）
+
+新增官方 Realtime v2.148.3 服務、Kong `/realtime/v1/` websocket 路由與健康檢查。路由將 Realtime 要求的租戶 Host 固定為 `realtime-dev.supabase-realtime`。`node scripts/local-supabase.mjs up` 和 `status` 均回報 Realtime healthy。真實訂閱、私有 Broadcast 授權與撤權測試結果見 [S4 Realtime 驗證](s4-realtime.md)；此本機結果不代表託管 Supabase 的 SLA。

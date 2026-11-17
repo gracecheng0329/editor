@@ -8,13 +8,14 @@ import { localGithubOAuth } from './local-github-oauth.mjs'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const state = resolve(root, '.local-supabase')
 const network = 'editor-supabase'
-const names = ['db', 'mail', 'auth', 'rest', 'gateway', 'meta', 'studio']
+const names = ['db', 'mail', 'auth', 'rest', 'realtime', 'gateway', 'meta', 'studio']
 const name = (service) => `editor-supabase-${service}`
 const upstream = 'f9e0376951a1fdcc488c335ca2de4e4dc4da12e6'
 const images = {
    db: 'docker.io/supabase/postgres:17.6.1.136',
    auth: 'docker.io/supabase/gotrue:v2.197.0',
    rest: 'docker.io/postgrest/postgrest:v14.18',
+   realtime: 'docker.io/supabase/realtime:v2.148.3',
    gateway: 'docker.io/kong:2.8.1',
    meta: 'docker.io/supabase/postgres-meta:v0.100.0',
    studio: 'docker.io/supabase/studio:2026.10.12-sha-3699278',
@@ -52,7 +53,17 @@ async function config() {
    await mkdir(state, { recursive: true, mode: 0o700 })
    const path = resolve(state, 'credentials.json')
    try {
-      return JSON.parse(await readFile(path, 'utf8'))
+      const value = JSON.parse(await readFile(path, 'utf8'))
+      // Realtime has its own database encryption key and Phoenix signing key.
+      // Add them to existing local installations without replacing their keys.
+      if (
+         typeof value.realtimeDbEncKey !== 'string' ||
+         Buffer.byteLength(value.realtimeDbEncKey) !== 16
+      )
+         value.realtimeDbEncKey = randomBytes(12).toString('base64url')
+      value.realtimeSecretKeyBase ??= randomBytes(48).toString('base64')
+      await privateFile(path, `${JSON.stringify(value, null, 2)}\n`)
+      return value
    } catch (error) {
       if (error.code !== 'ENOENT') throw error
    }
@@ -76,6 +87,8 @@ async function config() {
       anonKey: jwt('anon'),
       serviceKey: jwt('service_role'),
       metaKey: randomBytes(32).toString('hex'),
+      realtimeDbEncKey: randomBytes(12).toString('base64url'),
+      realtimeSecretKeyBase: randomBytes(48).toString('base64'),
    }
    await privateFile(path, `${JSON.stringify(value, null, 2)}\n`)
    return value
@@ -306,15 +319,60 @@ async function up() {
          PGRST_ADMIN_SERVER_PORT: '3001',
       },
    })
+   await run([
+      'exec',
+      name('db'),
+      'psql',
+      '-U',
+      'supabase_admin',
+      '-d',
+      'postgres',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-c',
+      'CREATE SCHEMA IF NOT EXISTS _realtime AUTHORIZATION supabase_admin;',
+   ])
+   await start('realtime', {
+      memory: '512M',
+      ports: ['54325:4000'],
+      env: {
+         PORT: '4000',
+         DB_HOST: db,
+         DB_PORT: '5432',
+         DB_USER: 'supabase_admin',
+         DB_PASSWORD: settings.password,
+         DB_NAME: 'postgres',
+         DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime',
+         DB_ENC_KEY: settings.realtimeDbEncKey,
+         API_JWT_SECRET: settings.jwtSecret,
+         SECRET_KEY_BASE: settings.realtimeSecretKeyBase,
+         METRICS_JWT_SECRET: settings.jwtSecret,
+         APP_NAME: 'realtime',
+         ERL_AFLAGS: '-proto_dist inet_tcp',
+         DNS_NODES: "''",
+         RLIMIT_NOFILE: '10000',
+         SEED_SELF_HOST: 'true',
+         RUN_JANITOR: 'true',
+      },
+   })
    const gatewayPath = resolve(state, 'kong.yml')
    const auth = await ip('auth')
    const rest = await ip('rest')
+   const realtime = await ip('realtime')
    const protectedPlugins = [
       { name: 'cors' },
       { name: 'key-auth', config: { hide_credentials: false } },
       {
          name: 'request-transformer',
          config: { add: { headers: ['Authorization:Bearer $(headers.apikey)'] } },
+      },
+   ]
+   const realtimePlugins = [
+      { name: 'cors' },
+      { name: 'key-auth', config: { hide_credentials: false, key_in_query: true } },
+      {
+         name: 'request-transformer',
+         config: { replace: { headers: ['Host:realtime-dev.supabase-realtime'] } },
       },
    ]
    const gatewayConfig = {
@@ -342,6 +400,12 @@ async function up() {
             url: `http://${rest}:3000/`,
             routes: [{ paths: ['/rest/v1/'], strip_path: true }],
             plugins: protectedPlugins,
+         },
+         {
+            name: 'realtime',
+            url: `http://${realtime}:4000/socket/`,
+            routes: [{ paths: ['/realtime/v1/'], strip_path: true }],
+            plugins: realtimePlugins,
          },
       ],
    }
@@ -409,6 +473,11 @@ async function status() {
    for (const [label, url, headers] of [
       ['Auth', 'http://127.0.0.1:54321/auth/v1/health', {}],
       ['REST', 'http://127.0.0.1:54321/rest/v1/', { apikey: settings.anonKey }],
+      [
+         'Realtime',
+         'http://127.0.0.1:54325/api/tenants/realtime-dev/health',
+         { Authorization: `Bearer ${settings.anonKey}` },
+      ],
       ['Studio', 'http://127.0.0.1:54323/api/platform/profile', {}],
       ['Mail', 'http://127.0.0.1:54324/livez', {}],
    ]) {

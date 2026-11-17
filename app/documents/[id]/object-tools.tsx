@@ -101,6 +101,7 @@ export function ObjectTools() {
       if (!a || !b) return
       setError('')
       const id = createShapeId()
+      editor.markHistoryStoppingPoint('create-connection')
       editor.run(() => {
          editor.createShape<TLArrowShape>({
             id,
@@ -186,6 +187,7 @@ export function ObjectTools() {
                   onChange={(event) => {
                      const color = event.target.value as TLDefaultColorStyle
                      editor.setStyleForNextShapes(DefaultColorStyle, color)
+                     if (selectedStroke) editor.markHistoryStoppingPoint('edit-stroke-color')
                      if (selectedStroke)
                         editor.updateShape<TLDrawShape>({
                            id: selectedStroke.id,
@@ -209,6 +211,7 @@ export function ObjectTools() {
                   onChange={(event) => {
                      const size = event.target.value as TLDefaultSizeStyle
                      editor.setStyleForNextShapes(DefaultSizeStyle, size)
+                     if (selectedStroke) editor.markHistoryStoppingPoint('edit-stroke-size')
                      if (selectedStroke)
                         editor.updateShape<TLDrawShape>({
                            id: selectedStroke.id,
@@ -305,6 +308,7 @@ export function ObjectTools() {
             onClick={() => {
                const id = createShapeId()
                const center = editor.getViewportPageBounds().center
+               editor.markHistoryStoppingPoint('create-text')
                editor
                   .createShape({
                      id,
@@ -327,6 +331,7 @@ export function ObjectTools() {
                      <input
                         aria-label={selected.type === 'text' ? '選取文字內容' : '選取連線標籤'}
                         value={renderPlaintextFromRichText(editor, selected.props.richText)}
+                        onFocus={() => editor.markHistoryStoppingPoint('edit-object-text')}
                         onChange={(event) =>
                            editor.updateShape({
                               id: selected.id,
@@ -344,6 +349,7 @@ export function ObjectTools() {
                         aria-label={`物件 ${axis}`}
                         type='number'
                         value={selected[axis]}
+                        onFocus={() => editor.markHistoryStoppingPoint('edit-object-position')}
                         onChange={(event) => {
                            if (
                               event.target.value !== '' &&
@@ -367,6 +373,7 @@ export function ObjectTools() {
                            type='number'
                            min='1'
                            value={Math.round(bounds[axis])}
+                           onFocus={() => editor.markHistoryStoppingPoint('resize-object')}
                            onChange={(event) => {
                               const value = event.target.valueAsNumber
                               if (!Number.isFinite(value) || value <= 0 || bounds[axis] <= 0) return
@@ -394,7 +401,13 @@ export function ObjectTools() {
                         />
                      </label>
                   ))}
-               <button type='button' onClick={() => editor.deleteShapes([selected.id])}>
+               <button
+                  type='button'
+                  onClick={() => {
+                     editor.markHistoryStoppingPoint('delete-object')
+                     editor.deleteShapes([selected.id])
+                  }}
+               >
                   刪除選取物件
                </button>
             </fieldset>
