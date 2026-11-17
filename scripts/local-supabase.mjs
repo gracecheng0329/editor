@@ -459,7 +459,7 @@ async function up() {
    })
    await privateFile(
       resolve(state, 'app.env'),
-      `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\nNEXT_PUBLIC_SUPABASE_ANON_KEY=${settings.anonKey}\nNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${settings.anonKey}\nSUPABASE_SERVICE_ROLE_KEY=${settings.serviceKey}\nDATABASE_URL=${database('postgres').replace(db, '127.0.0.1').replace(':5432/', ':54322/')}\n`,
+      `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\nNEXT_PUBLIC_SUPABASE_ANON_KEY=${settings.anonKey}\nNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${settings.anonKey}\nSUPABASE_SERVICE_ROLE_KEY=${settings.serviceKey}\nSUPABASE_JWT_SECRET=${settings.jwtSecret}\nDATABASE_URL=${database('postgres').replace(db, '127.0.0.1').replace(':5432/', ':54322/')}\n`,
    )
    await status()
 }

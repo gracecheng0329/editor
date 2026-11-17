@@ -905,6 +905,52 @@ kbd {
    padding: 12px 18px;
    background: #fcfaff;
 }
+.comment-realtime-status {
+   display: flex;
+   flex-direction: column;
+   gap: 4px;
+   padding: 9px 18px;
+   border-bottom: 1px solid #f0edf3;
+   color: #9b86b0;
+   font-size: 10px;
+}
+.comment-realtime-status [role='alert'] {
+   color: #a44153;
+}
+.comment-readonly-note {
+   padding: 14px 18px;
+   border-top: 1px solid #f0edf3;
+   color: #9a87aa;
+   font-size: 10px;
+   line-height: 1.7;
+}
+.comment-anchor-mode {
+   display: grid;
+   gap: 5px;
+   margin-bottom: 8px;
+   color: #9a87aa;
+   font-size: 10px;
+}
+.comment-anchor-mode select {
+   width: 100%;
+   padding: 7px 8px;
+   border: 1px solid #eee7f5;
+   border-radius: 7px;
+   color: #6c5c79;
+   background: #fdfbff;
+   font-size: 10px;
+}
+.remote-thread-reply {
+   display: flex;
+   align-items: center;
+   gap: 5px;
+   padding: 6px 0 0;
+   color: #9f78ce;
+   font-size: 10px;
+}
+.remote-thread-reply:hover {
+   color: #8653e8;
+}
 .panel-tabs {
    display: flex;
    gap: 20px;

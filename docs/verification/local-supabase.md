@@ -31,7 +31,7 @@ node scripts/verify-local-supabase.mjs --restart
 `.local-supabase/` 已加入 Git 忽略，目錄權限為 0700，產生的設定與金鑰檔為 0600（不含憑證的官方 SQL 為 0644，供容器讀取）：
 
 - `credentials.json`：每次首次安裝隨機產生的 DB 密碼、JWT secret、anon／service role key；重啟沿用。
-- `app.env`：Web app／測試需要的環境變數。不要提交或分享此檔，也不要把 service role key 放入 `NEXT_PUBLIC_*` 變數。
+- `app.env`：Web app／測試需要的環境變數，含僅供伺服器簽發短效 Realtime ticket 的 `SUPABASE_JWT_SECRET`。不要提交或分享此檔，也不要把 service role key 或 JWT secret 放入 `NEXT_PUBLIC_*` 變數。
 - 各服務的 `.env` 與 `kong.yml`：啟動設定，含本機金鑰。
 
 需要讓 Next.js 讀取設定時，將 `app.env` 中需要的值加入本機 `.env.local`；先保留既有設定，避免整檔覆蓋。原始金鑰不會印在啟動輸出中。

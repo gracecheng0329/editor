@@ -204,6 +204,7 @@ export type SyncedWorkspaceProps = {
    status: ReactNode
    collaborators: { id: string; name: string; color: string }[]
    tools: ReactNode
+   comments?: ReactNode
 }
 export function SyncedWorkspaceUi(props: SyncedWorkspaceProps) {
    return <WorkspaceChrome remote={props} />
@@ -651,15 +652,17 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                   }}
                />
             )}
-            <IconButton
-               icon={MessageCircle}
-               label='留言討論'
-               active={panel === 'comments'}
-               onClick={() => {
-                  setObjects(false)
-                  setPanel(panel === 'comments' ? null : 'comments')
-               }}
-            />
+            {remote?.comments ?? (
+               <IconButton
+                  icon={MessageCircle}
+                  label='留言討論'
+                  active={panel === 'comments'}
+                  onClick={() => {
+                     setObjects(false)
+                     setPanel(panel === 'comments' ? null : 'comments')
+                  }}
+               />
+            )}
             <IconButton
                icon={History}
                label='版本歷史'
@@ -847,7 +850,7 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                <div className='workspace-panel-body'>{remote.tools}</div>
             </aside>
          )}
-         {panel && (
+         {panel && (!remote || panel === 'versions') && (
             <aside
                className='side-panel floating-surface'
                aria-label={panel === 'comments' ? '留言面板' : '版本面板'}

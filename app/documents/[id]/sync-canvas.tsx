@@ -22,6 +22,7 @@ import {
 import 'tldraw/tldraw.css'
 import { SyncedWorkspaceUi, WorkspaceUnavailable } from '@/app/web/whiteboard/workspace-ui'
 import { syncedBindingUtils } from './arrow-binding'
+import { DocumentComments } from './comments'
 import { ObjectTools } from './object-tools'
 
 export type DocumentWorkspace = {
@@ -51,11 +52,15 @@ type RetainedContent = {
 }
 
 function CanvasControls({
+   documentId,
+   shareToken,
    connectionStatus,
    confirm,
    onConfirmed,
    workspace,
 }: {
+   documentId: string
+   shareToken: string
    workspace: DocumentWorkspace
    connectionStatus: string
    confirm: (signal: AbortSignal) => Promise<Checkpoint>
@@ -130,6 +135,7 @@ function CanvasControls({
             name: peer.userName,
             color: peer.color,
          }))}
+         comments={<DocumentComments documentId={documentId} shareToken={shareToken} />}
          status={
             <>
                <output aria-label='同步狀態'>
@@ -525,6 +531,8 @@ function ConnectedCanvas({
             <ReadonlyCanvas readOnly={readOnly} />
             {readOnly ? (
                <ViewerCanvasControls
+                  documentId={documentId}
+                  shareToken={shareToken}
                   connectionStatus={store.connectionStatus}
                   title={title}
                   retained={retained}
@@ -532,6 +540,8 @@ function ConnectedCanvas({
             ) : (
                workspace && (
                   <CanvasControls
+                     documentId={documentId}
+                     shareToken={shareToken}
                      workspace={workspace}
                      connectionStatus={store.connectionStatus}
                      confirm={confirm}
@@ -615,10 +625,14 @@ export default function SyncCanvas({
 }
 
 function ViewerCanvasControls({
+   documentId,
+   shareToken,
    connectionStatus,
    retained,
    title,
 }: {
+   documentId: string
+   shareToken: string
    connectionStatus: string
    retained: RetainedContent | null
    title: string
@@ -659,6 +673,7 @@ function ViewerCanvasControls({
             </output>
             <span className='divider' />
             <span>{retained ? '本機內容未送出' : '觀看者・唯讀'}</span>
+            <DocumentComments documentId={documentId} shareToken={shareToken} />
          </div>
          {retained && (
             <section
