@@ -212,3 +212,9 @@ export function makeCommentRealtimeTicket(access: CommentAccess, documentId: str
    const signature = createHmac('sha256', secret).update(input).digest('base64url')
    return { accessToken: `${input}.${signature}`, expiresAt: expiresAt * 1000, role: access.role }
 }
+
+export function validMentionIds(value: unknown): string[] | null {
+   if (value === undefined) return []
+   if (!Array.isArray(value) || value.length > 20 || value.some((id) => typeof id !== 'string' || !uuid(id))) return null
+   return [...new Set(value)]
+}

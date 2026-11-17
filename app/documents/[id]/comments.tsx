@@ -12,6 +12,7 @@ type CommentMessage = {
    authorId: string | null
    author: string
    body: string
+   mentions: { id: string; name: string }[]
    createdAt: string
 }
 type CommentAnchor =
@@ -26,6 +27,10 @@ type CommentAnchor =
 type CommentThread = {
    id: string
    revision: number
+   status: 'open' | 'resolved'
+   resolvedBy: string | null
+   resolvedAt: string | null
+   canResolve: boolean
    createdAt: string
    anchor: CommentAnchor
    messages: CommentMessage[]
@@ -33,6 +38,7 @@ type CommentThread = {
 type CommentList = {
    role: 'owner' | 'editor' | 'viewer'
    canWrite: boolean
+   participants: { id: string; name: string }[]
    threads: CommentThread[]
 }
 
@@ -70,6 +76,7 @@ export function DocumentComments({
    const [error, setError] = useState('')
    const [realtime, setRealtime] = useState('連線中')
    const [draft, setDraft] = useState('')
+   const [mentions, setMentions] = useState<string[]>([])
    const [activeThread, setActiveThread] = useState<string | null>(null)
    const [anchorMode, setAnchorMode] = useState<'world' | 'object'>('world')
    const [busy, setBusy] = useState(false)
@@ -283,6 +290,7 @@ export function DocumentComments({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                body,
+               mentions,
                ...(!isReply ? { anchor } : {}),
                shareToken: shareToken || null,
             }),
@@ -297,10 +305,32 @@ export function DocumentComments({
          }
          const result = (await response.json()) as { id: string }
          setDraft('')
+         setMentions([])
          setActiveThread(result.id)
          await reload()
       } catch {
          setError('留言沒有送出，請確認連線後重試。')
+      } finally {
+         setBusy(false)
+      }
+   }
+
+   async function changeStatus(thread: CommentThread) {
+      if (busy) return
+      setBusy(true)
+      try {
+         const response = await fetch(`/api/documents/${encodeURIComponent(documentId)}/comments/threads/${encodeURIComponent(thread.id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: thread.status === 'open' ? 'resolved' : 'open', shareToken: shareToken || null }),
+         })
+         if (!response.ok) {
+            setError('無法變更討論狀態，請確認權限後重試。')
+            return
+         }
+         await reload()
+      } catch {
+         setError('無法變更討論狀態，請確認連線後重試。')
       } finally {
          setBusy(false)
       }
@@ -380,6 +410,11 @@ export function DocumentComments({
                                           : '畫布世界座標留言'}
                                        <ArrowUpRight size={12} />
                                     </button>
+                                    <div className='message-meta'>
+                                       <span>{thread.status === 'resolved' ? '已解決' : '討論中'}</span>
+                                       {thread.resolvedAt && <time dateTime={thread.resolvedAt}>{new Date(thread.resolvedAt).toLocaleString('zh-TW')}</time>}
+                                       {thread.canResolve && <button type='button' disabled={busy} onClick={() => void changeStatus(thread)}>{thread.status === 'resolved' ? '重新開啟討論' : '解決討論'}</button>}
+                                    </div>
                                     {thread.messages.map((message) => (
                                        <div className='comment-message' key={message.id}>
                                           <span className='message-avatar'>{message.author.slice(0, 1)}</span>
@@ -394,6 +429,7 @@ export function DocumentComments({
                                                 </time>
                                              </div>
                                              <p>{message.body}</p>
+                                             {message.mentions.map((person) => <span className='count-badge' key={person.id} title={person.id}>@{person.name}</span>)}
                                           </div>
                                        </div>
                                     ))}
@@ -446,6 +482,18 @@ export function DocumentComments({
                                     </select>
                                  </label>
                               )}
+                              <label className='comment-anchor-mode'>
+                                 @提及參與者
+                                 <select aria-label='提及參與者' value='' onChange={(event) => {
+                                    const person = data.participants.find((person) => person.id === event.target.value)
+                                    if (!person || mentions.includes(person.id) || mentions.length >= 20) return
+                                    setMentions((current) => [...current, person.id])
+                                 }}>
+                                    <option value=''>選取參與者</option>
+                                    {data.participants.filter((person) => !mentions.includes(person.id)).map((person) => <option key={person.id} value={person.id}>{person.name} ({person.id.slice(0, 8)})</option>)}
+                                 </select>
+                              </label>
+                              <div>{mentions.map((id) => <button type='button' key={id} onClick={() => setMentions((current) => current.filter((value) => value !== id))}>@{data.participants.find((person) => person.id === id)?.name ?? id} ×</button>)}</div>
                               <textarea
                                  aria-label='留言內容'
                                  placeholder='分享你的想法…'
