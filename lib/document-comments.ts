@@ -191,7 +191,7 @@ export function makeCommentRealtimeTicket(access: CommentAccess, documentId: str
       throw new Error('A current document session is required')
 
    const now = Math.floor(Date.now() / 1000)
-   const expiresAt = now + (access.role === 'viewer' ? 45 : 300)
+   const expiresAt = now + 45
    const payload: Record<string, unknown> = {
       iss: 'supabase',
       aud: 'authenticated',

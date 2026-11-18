@@ -169,7 +169,7 @@ test('Postgres comments enforce document access and keep object anchor history',
          data: {},
       })
       expect(ownerTicket.status()).toBe(200)
-      expect((await ownerTicket.json()).expiresAt).toBeGreaterThan(Date.now() + 200_000)
+      expect((await ownerTicket.json()).expiresAt).toBeLessThanOrEqual(Date.now() + 45_000)
       const viewerTicket = await request.post(`${path}/ticket`, {
          headers: viewerHeaders,
          data: { shareToken },

@@ -14,7 +14,7 @@ Open the same document in independent owner and signed-in share-viewer sessions.
 - Green: the real-service authorization test passed, including private-user mention rejection, forged author rejection, role restrictions, cross-document rejection, resolution timestamps, reopen, and revoked participant filtering.
 - Formal UI: the independent owner/viewer/anonymous browser journey passed with mention identity, resolve/reopen propagation, replies and reload persistence (2 tests including the authorization contract, 24.9s).
 - TypeScript and targeted Biome lint passed. Next.js 16.4.5 Webpack production build passed.
-- Full AC-15 production load and the complete regression result will be recorded after the active run finishes.
+- Production regression: **5 passed (5.8m)**, including the five-minute load. All 1,500 canvas operations and 150 comments converged without errors. Canvas max 981.7ms, p95 148.7ms; comment write plus peer read max 1008.0ms. Conditions and complete results: [load JSON](s4-13-load.json). No cadence misses were recorded.
 
 Reproduce with local Supabase running and all migrations applied:
 
