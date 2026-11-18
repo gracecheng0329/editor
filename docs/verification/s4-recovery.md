@@ -21,7 +21,7 @@ After the minimal implementation, both tests passed (2 tests, 21.2s). Further re
 
 Additional regression scenarios cover the owner revoking a link through the formal 分享 dialog; a still-open viewer page recovering an outage with a missed thread/reply; and a deliberately held response containing an older real database snapshot followed by real writes and authoritative rereads. Network controls delay/abort transport only; no mocked sync merge or private SDK store/message assertions are used.
 
-The complete development-service regression passed **8 tests (1.7m)**, with the explicit load test skipped in that run. TypeScript, task-scoped Biome lint and the fixed local Webpack production build passed. The final production regression/load is running and its result will be recorded separately. Run with local Supabase and migrations applied:
+The complete development-service regression passed **8 tests (1.7m)**, with the explicit load test skipped in that run. TypeScript, task-scoped Biome lint and the fixed local Webpack production build passed. The final fixed production regression passed **9 tests (7.3m)**, including the full load and actual lease-expiry test. The five-minute load completed all 1,500 canvas operations and 150 comments with no cadence misses, consistency failures or browser errors. Canvas max 1041.5ms, p95 163.2ms; comment write plus peer read max 1430.0ms. Full conditions/results: [#14 load JSON](s4-14-load.json). Comment read latency measures the public HTTP persistence path; the separate formal browser tests verify notification-driven rendering. Run with local Supabase and migrations applied:
 
 ```sh
 pnpm exec playwright test --config playwright.s4-comments.config.ts
