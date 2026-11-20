@@ -30,7 +30,9 @@ Vercel Production deployment `DuUKvsydRsEEEiunNazFpHKCcwtg` reached Ready on 202
 
 The owner then revoked the temporary viewer link. The owner UI showed that the link was disabled. The listener's next protected read returned `403`, and its subscribed channel reported `CLOSED` in the same ten-second polling interval. Reloading the owner page retained all seven discussions, including the post-heartbeat entry, and showed both document sync and discussion Realtime connected. The temporary viewer capability remains revoked.
 
-![Production owner page after reload, with seven persisted discussions and Realtime connected](images/s4-remote-owner-2026-11-20.png)
+The same exact Production deployment was then used for a final #13 review smoke. The owner posted `S4 remote Production mention/review smoke 16aa2fe`, selected the current document participant for an @mention, and verified the rendered mention resolves to the stable participant identity. The owner resolved that discussion and reopened it. After reloading the document and reopening the discussion panel, all eight discussions remained persisted; the new mention thread remained open, and document sync plus discussion Realtime showed connected / confirmed-persisted status. This closes the exact-deployment hosted recheck for #13/#14.
+
+![Production owner page after reload, with eight persisted discussions, the mention review thread open, and Realtime connected](images/s4-remote-owner-2026-11-20.png)
 
 ![Production share settings after the temporary viewer link was revoked](images/s4-remote-share-revoked-2026-11-20.png)
 
