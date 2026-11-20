@@ -29,7 +29,9 @@ export default defineConfig({
          },
       },
       {
-         command: 'node node_modules/next/dist/bin/next dev --webpack --hostname 127.0.0.1 --port 3103',
+         command: process.env.S4_PRODUCTION === '1'
+            ? 'node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3103'
+            : 'node node_modules/next/dist/bin/next dev --webpack --hostname 127.0.0.1 --port 3103',
          url: 'http://127.0.0.1:3103',
          reuseExistingServer: false,
          timeout: 120_000,

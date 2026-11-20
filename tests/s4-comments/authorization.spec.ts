@@ -169,7 +169,7 @@ test('Postgres comments enforce document access and keep object anchor history',
          data: {},
       })
       expect(ownerTicket.status()).toBe(200)
-      expect((await ownerTicket.json()).expiresAt).toBeGreaterThan(Date.now() + 200_000)
+      expect((await ownerTicket.json()).expiresAt).toBeLessThanOrEqual(Date.now() + 45_000)
       const viewerTicket = await request.post(`${path}/ticket`, {
          headers: viewerHeaders,
          data: { shareToken },
@@ -251,6 +251,7 @@ test('separate document pages receive and persist a real shared discussion', asy
       const firstMessage = `owner thread ${crypto.randomUUID()}`
       const replyMessage = `viewer reply ${crypto.randomUUID()}`
       await ownerPage.getByLabel('討論位置').selectOption('world')
+      await ownerPage.getByLabel('提及參與者').selectOption(viewer.id)
       await ownerPage.getByLabel('留言內容').fill(firstMessage)
       const firstPost = ownerPage.waitForResponse(
          (response) =>
@@ -263,6 +264,12 @@ test('separate document pages receive and persist a real shared discussion', asy
       await expect(ownerPage.getByText(firstMessage)).toBeVisible()
       await expect(viewerPage.getByText(firstMessage)).toBeVisible()
 
+      await expect(viewerPage.getByTitle(viewer.id)).toHaveText('@Discussion viewer')
+      await expect(viewerPage.getByRole('button', { name: '解決討論', exact: true })).toHaveCount(0)
+      await ownerPage.getByRole('button', { name: '解決討論', exact: true }).click()
+      await expect(viewerPage.getByText('已解決', { exact: true })).toBeVisible()
+      await ownerPage.getByRole('button', { name: '重新開啟討論' }).click()
+      await expect(viewerPage.getByText('討論中', { exact: true })).toBeVisible()
       await viewerPage.getByRole('button', { name: '回覆' }).click()
       await viewerPage.getByLabel('留言內容').fill(replyMessage)
       await viewerPage.getByRole('button', { name: '送出留言' }).click()

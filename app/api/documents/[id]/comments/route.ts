@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { documentCommentAccess, safeShareToken, validAnchorUpdates, validCommentAnchor } from '@/lib/document-comments'
+import { documentCommentAccess, safeShareToken, validMentionIds, validAnchorUpdates, validCommentAnchor } from '@/lib/document-comments'
 import { fail } from '@/lib/documents'
 import { validOrigin } from '@/lib/http'
 import { uuid } from '@/lib/sharing'
@@ -47,6 +47,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
    if (!uuid(id)) return fail('NOT_FOUND', 404)
    const input = await request.json().catch(() => null)
    if (!input || typeof input !== 'object') return fail('VALIDATION_FAILED', 422)
+   const mentions = validMentionIds(input?.mentions)
+   if (!mentions || ['authorId', 'author', 'createdBy', 'resolvedBy', 'resolvedAt'].some((key) => key in (input ?? {})))
+      return fail('VALIDATION_FAILED', 422)
    const body = typeof input.body === 'string' ? input.body.trim() : ''
    const anchor = validCommentAnchor(input.anchor)
    const shareToken = safeShareToken(input.shareToken)
@@ -56,10 +59,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const access = await documentCommentAccess(request, id, shareToken)
       if (!access.user || !access.sessionActive) return fail('UNAUTHENTICATED', 401)
       if (!access.role) return fail('FORBIDDEN', 403)
-      const { data, error } = await access.client.rpc('create_document_comment_thread', {
+      const { data, error } = await access.client.rpc('write_document_comment', {
          target_doc: id,
          anchor,
          body,
+         mention_ids: mentions,
          share_token: shareToken,
       })
       if (error) return rpcFailure(error)

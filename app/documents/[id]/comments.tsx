@@ -1,40 +1,12 @@
 'use client'
 
-import { createClient } from '@supabase/supabase-js'
 import { ArrowUpRight, Link2, MessageCircle, Send, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { type TLShape, type TLShapeId, useEditor, useValue } from 'tldraw'
 
-type Point = { x: number; y: number }
-type CommentMessage = {
-   id: string
-   authorId: string | null
-   author: string
-   body: string
-   createdAt: string
-}
-type CommentAnchor =
-   | { type: 'world'; x: number; y: number }
-   | {
-        type: 'object'
-        objectId: string
-        offset: Point
-        world: Point
-        exists: boolean
-     }
-type CommentThread = {
-   id: string
-   revision: number
-   createdAt: string
-   anchor: CommentAnchor
-   messages: CommentMessage[]
-}
-type CommentList = {
-   role: 'owner' | 'editor' | 'viewer'
-   canWrite: boolean
-   threads: CommentThread[]
-}
+import type { CommentAnchor, CommentThread, Point } from './comment-types'
+import { useCommentStream } from './comment-stream'
 
 function anchorWorldPoint(
    anchor: CommentAnchor,
@@ -66,10 +38,9 @@ export function DocumentComments({
    const selection = useValue('comment anchor selection', () => editor.getSelectedShapes(), [editor])
    const [open, setOpen] = useState(false)
    const [overlayRoot, setOverlayRoot] = useState<HTMLElement | null>(null)
-   const [data, setData] = useState<CommentList | null>(null)
-   const [error, setError] = useState('')
-   const [realtime, setRealtime] = useState('連線中')
+   const { data, error, setError, realtime, reload, reconnect } = useCommentStream(documentId, shareToken)
    const [draft, setDraft] = useState('')
+   const [mentions, setMentions] = useState<string[]>([])
    const [activeThread, setActiveThread] = useState<string | null>(null)
    const [anchorMode, setAnchorMode] = useState<'world' | 'object'>('world')
    const [busy, setBusy] = useState(false)
@@ -81,101 +52,6 @@ export function DocumentComments({
    useEffect(() => {
       setOverlayRoot(document.querySelector<HTMLElement>('.workspace-ui'))
    }, [])
-
-   const reload = useCallback(async () => {
-      const headers = shareToken ? { 'X-Document-Share-Token': shareToken } : undefined
-      const response = await fetch(`/api/documents/${encodeURIComponent(documentId)}/comments`, {
-         headers,
-         cache: 'no-store',
-      })
-      if (!response.ok) {
-         if ([401, 403, 404].includes(response.status)) setData(null)
-         setError(
-            response.status === 401 || response.status === 403 || response.status === 404
-               ? '目前沒有讀取此文件討論的資格。'
-               : '無法載入討論，請稍後重試。',
-         )
-         return
-      }
-      setData((await response.json()) as CommentList)
-      setError('')
-   }, [documentId, shareToken])
-
-   useEffect(() => {
-      let disposed = false
-      let client: ReturnType<typeof createClient> | null = null
-      let channel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null
-      let renewal: ReturnType<typeof setInterval> | undefined
-
-      async function issueTicket() {
-         const response = await fetch(
-            `/api/documents/${encodeURIComponent(documentId)}/comments/ticket`,
-            {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({ shareToken: shareToken || null }),
-               cache: 'no-store',
-            },
-         )
-         if (!response.ok) throw new Error('留言訂閱資格已失效')
-         return (await response.json()) as { accessToken: string }
-      }
-
-      async function connect() {
-         try {
-            await reload()
-            const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-            const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-            if (!url || !anonKey || disposed) return
-
-            const ticket = await issueTicket()
-            if (disposed) return
-            client = createClient(url, anonKey, {
-               auth: {
-                  autoRefreshToken: false,
-                  detectSessionInUrl: false,
-                  persistSession: false,
-               },
-            })
-            await client.realtime.setAuth(ticket.accessToken)
-            channel = client
-               .channel(`document-comments:${documentId}`, { config: { private: true } })
-               .on('broadcast', { event: 'comment_changed' }, () => void reload())
-               .subscribe((status) => {
-                  if (disposed) return
-                  setRealtime(
-                     status === 'SUBSCRIBED'
-                        ? '即時更新已連線'
-                        : status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT'
-                          ? '即時更新中斷'
-                          : '正在連接即時更新',
-                  )
-                  if (status === 'SUBSCRIBED') void reload()
-               })
-
-            renewal = setInterval(() => {
-               void issueTicket()
-                  .then((next) => client?.realtime.setAuth(next.accessToken))
-                  .catch(async () => {
-                     if (disposed) return
-                     setRealtime('分享資格已撤銷或已失效')
-                     if (client && channel) await client.removeChannel(channel)
-                     channel = null
-                     if (renewal) clearInterval(renewal)
-                  })
-            }, 20_000)
-         } catch {
-            if (!disposed) setRealtime('即時更新目前無法連線')
-         }
-      }
-
-      void connect()
-      return () => {
-         disposed = true
-         if (renewal) clearInterval(renewal)
-         if (client && channel) void client.removeChannel(channel)
-      }
-   }, [documentId, reload, shareToken])
 
    const anchorPositions = useMemo(() => {
       // Camera changes move only the screen marker. Saved world coordinates stay fixed.
@@ -283,6 +159,7 @@ export function DocumentComments({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                body,
+               mentions,
                ...(!isReply ? { anchor } : {}),
                shareToken: shareToken || null,
             }),
@@ -297,10 +174,32 @@ export function DocumentComments({
          }
          const result = (await response.json()) as { id: string }
          setDraft('')
+         setMentions([])
          setActiveThread(result.id)
          await reload()
       } catch {
          setError('留言沒有送出，請確認連線後重試。')
+      } finally {
+         setBusy(false)
+      }
+   }
+
+   async function changeStatus(thread: CommentThread) {
+      if (busy) return
+      setBusy(true)
+      try {
+         const response = await fetch(`/api/documents/${encodeURIComponent(documentId)}/comments/threads/${encodeURIComponent(thread.id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: thread.status === 'open' ? 'resolved' : 'open', shareToken: shareToken || null }),
+         })
+         if (!response.ok) {
+            setError('無法變更討論狀態，請確認權限後重試。')
+            return
+         }
+         await reload()
+      } catch {
+         setError('無法變更討論狀態，請確認連線後重試。')
       } finally {
          setBusy(false)
       }
@@ -361,6 +260,7 @@ export function DocumentComments({
                         </header>
                         <div className='comment-realtime-status' role='status'>
                            <span>{realtime}</span>
+                           <button type='button' onClick={reconnect}>重新連線留言</button>
                            {error && <span role='alert'>{error}</span>}
                         </div>
                         <div className='thread-list'>
@@ -380,6 +280,11 @@ export function DocumentComments({
                                           : '畫布世界座標留言'}
                                        <ArrowUpRight size={12} />
                                     </button>
+                                    <div className='message-meta'>
+                                       <span>{thread.status === 'resolved' ? '已解決' : '討論中'}</span>
+                                       {thread.resolvedAt && <time dateTime={thread.resolvedAt}>{new Date(thread.resolvedAt).toLocaleString('zh-TW')}</time>}
+                                       {thread.canResolve && <button type='button' disabled={busy} onClick={() => void changeStatus(thread)}>{thread.status === 'resolved' ? '重新開啟討論' : '解決討論'}</button>}
+                                    </div>
                                     {thread.messages.map((message) => (
                                        <div className='comment-message' key={message.id}>
                                           <span className='message-avatar'>{message.author.slice(0, 1)}</span>
@@ -394,6 +299,7 @@ export function DocumentComments({
                                                 </time>
                                              </div>
                                              <p>{message.body}</p>
+                                             {message.mentions.map((person) => <span className='count-badge' key={person.id} title={person.id}>@{person.name}</span>)}
                                           </div>
                                        </div>
                                     ))}
@@ -446,6 +352,18 @@ export function DocumentComments({
                                     </select>
                                  </label>
                               )}
+                              <label className='comment-anchor-mode'>
+                                 @提及參與者
+                                 <select aria-label='提及參與者' value='' onChange={(event) => {
+                                    const person = data.participants.find((person) => person.id === event.target.value)
+                                    if (!person || mentions.includes(person.id) || mentions.length >= 20) return
+                                    setMentions((current) => [...current, person.id])
+                                 }}>
+                                    <option value=''>選取參與者</option>
+                                    {data.participants.filter((person) => !mentions.includes(person.id)).map((person) => <option key={person.id} value={person.id}>{person.name} ({person.id.slice(0, 8)})</option>)}
+                                 </select>
+                              </label>
+                              <div>{mentions.map((id) => <button type='button' key={id} onClick={() => setMentions((current) => current.filter((value) => value !== id))}>@{data.participants.find((person) => person.id === id)?.name ?? id} ×</button>)}</div>
                               <textarea
                                  aria-label='留言內容'
                                  placeholder='分享你的想法…'

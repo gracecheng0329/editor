@@ -1,5 +1,7 @@
 # S4 persistent comments
 
+Historical #12 evidence. Follow-up implementation and current verification: [#13 review](s4-review.md), [#14 recovery/revocation](s4-recovery.md).
+
 Verified: 2026-11-17. Comment threads and messages are stored in Postgres, independently of the synchronized canvas. Every read, write, and Realtime ticket request checks the current document access. Realtime carries only a thread ID and revision; clients reload content through the protected comments endpoint.
 
 ## Local verification

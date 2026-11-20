@@ -191,7 +191,7 @@ export function makeCommentRealtimeTicket(access: CommentAccess, documentId: str
       throw new Error('A current document session is required')
 
    const now = Math.floor(Date.now() / 1000)
-   const expiresAt = now + (access.role === 'viewer' ? 45 : 300)
+   const expiresAt = now + 45
    const payload: Record<string, unknown> = {
       iss: 'supabase',
       aud: 'authenticated',
@@ -211,4 +211,10 @@ export function makeCommentRealtimeTicket(access: CommentAccess, documentId: str
    const input = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(payload)}`
    const signature = createHmac('sha256', secret).update(input).digest('base64url')
    return { accessToken: `${input}.${signature}`, expiresAt: expiresAt * 1000, role: access.role }
+}
+
+export function validMentionIds(value: unknown): string[] | null {
+   if (value === undefined) return []
+   if (!Array.isArray(value) || value.length > 20 || value.some((id) => typeof id !== 'string' || !uuid(id))) return null
+   return [...new Set(value)]
 }
