@@ -1,0 +1,46 @@
+{
+  "project": "gnmaayjhlnrlqcpxkjjw",
+  "name": "editor-s1-test",
+  "region": "ap-northeast-2",
+  "database": "17.11.0.011",
+  "sourceCommit": "33f18a786fc1a0c4f30417bedfffd312ed5bb47c",
+  "migrationVersion": "20261118073210",
+  "migrationName": "s4_comments_release_20261118",
+  "sources": [
+    {
+      "name": "202611090007_display_name_invitations.sql",
+      "sha256": "a46f040bc97bd85802a19c8b499331f01550631cbb0fb8afaf43dcef643a68a7"
+    },
+    {
+      "name": "202611090008_id_only_invitations.sql",
+      "sha256": "95fefee60f5f6e307a18a9ddd5fab3cb4a5ca71abd5681390d8a64c66eec6263"
+    },
+    {
+      "name": "202611110001_share_room_access.sql",
+      "sha256": "67f61605b2d0b4c450ea61547d2e0efecd57b18664672e630ea07aedc0950a70"
+    },
+    {
+      "name": "202611170001_document_comments.sql",
+      "sha256": "1d370ab065168598fb2abbea961073bf68d903cccb1b0f8e211de6ae2a8ee76f"
+    },
+    {
+      "name": "202611170002_harden_document_comment_writes.sql",
+      "sha256": "cf4bf3102c7f590584cb53cb456a9a157555a67ff1de55b09156e49332107f81"
+    },
+    {
+      "name": "202611170003_comment_reviews.sql",
+      "sha256": "491806485cdcbe271a1d6b3e017ee3af683932e5b37ddd0c482afb0b3c13a08a"
+    },
+    {
+      "name": "202611170004_comment_message_identity.sql",
+      "sha256": "50046eeed0c1b71efeb15f1e22d93e5c652311cfe29924b2224f8ae7b4b7cf74"
+    }
+  ],
+  "verified": {
+    "privateCommentTablesRls": true,
+    "directAnonAndAuthenticatedSelect": false,
+    "resolutionColumns": true,
+    "writerAndStatusRpc": true,
+    "privateBroadcastPolicy": true
+  }
+}

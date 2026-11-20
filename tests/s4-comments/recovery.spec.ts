@@ -31,6 +31,61 @@ test('every comment subscription lease bounds revoked capabilities to 45 seconds
    }
 })
 
+test('formal discussion receives changes after a Realtime heartbeat without waiting for reconciliation', async ({
+   browser,
+   request,
+}) => {
+   const owner = await registeredUser(true, 'Heartbeat owner')
+   const context = await browser.newContext()
+   const origin = 'http://127.0.0.1:3103'
+   const readTimes: number[] = []
+   let blockReads = false
+   try {
+      const created = await request.post('/api/documents', {
+         headers: owner.headers,
+         data: { title: 'Realtime heartbeat delivery' },
+      })
+      const { id } = await created.json()
+      const path = `/api/documents/${id}/comments`
+      const initial = await request.post(path, {
+         headers: owner.headers,
+         data: { body: 'Before subscribing', anchor: { type: 'world', x: 0, y: 0 } },
+      })
+      expect(initial.status()).toBe(201)
+
+      await context.addCookies(owner.browserCookies().map((cookie) => ({ ...cookie, url: origin })))
+      const page = await context.newPage()
+      await page.route(`**${path}`, async (route) => {
+         if (route.request().method() === 'GET' && blockReads) {
+            readTimes.push(Date.now())
+            await route.fulfill({ status: 503, body: 'temporary read outage' })
+         } else await route.continue()
+      })
+      await page.goto(`/documents/${id}`)
+      await page.getByRole('button', { name: '留言討論' }).click()
+      await expect(page.getByText('Before subscribing', { exact: true })).toBeVisible()
+      await expect(page.getByText('即時更新已連線')).toBeVisible()
+
+      const started = Date.now()
+      blockReads = true
+      await expect
+         .poll(() => readTimes.some((time) => time - started >= 25_000), { timeout: 40_000 })
+         .toBe(true)
+      const beforeEvent = readTimes.length
+      const afterHeartbeat = await request.post(path, {
+         headers: owner.headers,
+         data: { body: 'After Realtime heartbeat', anchor: { type: 'world', x: 0, y: 0 } },
+      })
+      expect(afterHeartbeat.status()).toBe(201)
+      await expect
+         .poll(() => readTimes.length, { intervals: [50], timeout: 1500 })
+         .toBe(beforeEvent + 1)
+   } finally {
+      await context.close()
+      await owner.cleanup()
+   }
+})
+
 test('formal discussion recovers failed connection and missed messages, then clears revoked content', async ({
    browser,
    request,
@@ -93,6 +148,9 @@ test('formal discussion recovers failed connection and missed messages, then cle
       await ownerPage.getByRole('button', { name: '分享', exact: true }).click()
       await ownerPage.getByRole('button', { name: '撤銷觀看連結', exact: true }).click()
       await expect(ownerPage.getByText('尚未啟用觀看連結。')).toBeVisible()
+      const discussionButton = page.getByRole('button', { name: '留言討論' })
+      if ((await discussionButton.getAttribute('aria-pressed')) !== 'true')
+         await discussionButton.click()
       await expect(page.getByText('目前沒有讀取此文件討論的資格。')).toBeVisible({
          timeout: 30_000,
       })

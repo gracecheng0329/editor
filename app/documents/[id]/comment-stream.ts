@@ -23,6 +23,7 @@ export function useCommentStream(documentId: string, shareToken: string) {
       let connecting = false
       let retry: ReturnType<typeof setTimeout> | undefined
       const controller = new AbortController()
+      let realtimeAccessToken: string | null = null
       const client = createClient(
          process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
@@ -31,8 +32,9 @@ export function useCommentStream(documentId: string, shareToken: string) {
                autoRefreshToken: false,
                detectSessionInUrl: false,
                persistSession: false,
-               storageKey: `comment-stream:${documentId}`,
+               storageKey: `comment-stream:${documentId}:${attempt}`,
             },
+            accessToken: async () => realtimeAccessToken,
          },
       )
       let channel: ReturnType<typeof client.channel> | null = null
@@ -47,6 +49,7 @@ export function useCommentStream(documentId: string, shareToken: string) {
          setData(null)
          setError('目前沒有讀取此文件討論的資格。')
          setRealtime('留言存取資格已失效')
+         realtimeAccessToken = null
          if (channel) void client.removeChannel(channel)
          channel = null
       }
@@ -125,6 +128,7 @@ export function useCommentStream(documentId: string, shareToken: string) {
             channel = null
             if (previous) await client.removeChannel(previous)
             if (disposed || denied) return
+            realtimeAccessToken = ticket.accessToken
             await client.realtime.setAuth(ticket.accessToken)
             if (disposed || denied) return
             const nextChannel = client
@@ -173,6 +177,7 @@ export function useCommentStream(documentId: string, shareToken: string) {
       return () => {
          disposed = true
          controller.abort()
+         realtimeAccessToken = null
          clearInterval(renewal)
          clearInterval(reconciliation)
          if (retry) clearTimeout(retry)
