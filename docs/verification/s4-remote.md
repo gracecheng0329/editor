@@ -1,6 +1,6 @@
 # S4 remote deployment verification
 
-Updated: 2026-11-20 (Asia/Taipei). Target: `editor-s1-test` and the Vercel `editor` Production environment. The first hosted release is verified below; the Realtime heartbeat correction at the end still needs a new production deployment and hosted recheck before #13/#14 are complete.
+Updated: 2026-11-20 (Asia/Taipei). Target: `editor-s1-test` and the Vercel `editor` Production environment. The remote migration, Production JWT configuration, heartbeat fix deployment, and hosted recheck are complete for #13/#14.
 
 ## Remote migration
 
@@ -20,10 +20,18 @@ Through the formal owner UI, a private smoke document `S4 remote smoke 2026-11-1
 
 ![Formal owner discussion page from the initial hosted smoke](images/s4-remote-owner-2026-11-18.jpg)
 
-## Realtime heartbeat correction pending production recheck
+## Production recheck of the Realtime heartbeat correction
 
 An owner page diagnostic showed intermittent Realtime reconnect status. A real-service Playwright regression then isolated a delivery gap: Supabase JS invokes the configured `accessToken` callback on each heartbeat. Calling `realtime.setAuth(documentTicket)` alone was insufficient because the default callback in an anonymous client could subsequently replace it with the public API key. After a natural heartbeat, new discussion events could wait for the five-second reconciliation read.
 
-The code now supplies a callback backed by the current per-document ticket, updates it before `setAuth`, and clears it on deny or teardown. The regression test blocks reconciliation reads after the natural heartbeat, posts a new comment through the public API, and requires the event-driven read within 1.5 seconds. This test failed before the fix and passed after it. The full local recovery suite passed all five tests in 2.3 minutes, including 45-second ticket lease expiry, heartbeat delivery, failed-connection recovery and missed-message reads, revocation clearing, and delayed/duplicate notification ordering. TypeScript, scoped Biome, and `git diff --check` also passed. The local Next.js production build passed on 2026-11-20. A production deployment of this fix and its hosted recheck are still pending; it is not part of deployment `HKczMM4npBw7FuJDMH6CqEA5Qqms`.
+The fix now supplies an `accessToken` callback backed by the current per-document ticket, updates it before `setAuth`, and clears it on deny or teardown. The regression test blocks reconciliation reads after the natural heartbeat, posts a new comment through the public API, and requires the event-driven read within 1.5 seconds. It failed before the fix and passed after it. The full local recovery suite passed all five tests in 2.3 minutes, covering the 45-second ticket lease, heartbeat delivery, failed-connection recovery and missed-message reads, revocation clearing, and delayed/duplicate notification ordering. TypeScript, scoped Biome, `git diff --check`, and the local Next.js production build passed on 2026-11-20.
 
-A reviewed build containing the heartbeat fix still needs to be deployed to Production. Then repeat hosted persistence, mention, resolve/reopen, private Broadcast after a natural heartbeat, recovery, and share revocation on that exact deployment. Keep #13/#14 open until that run passes. Local tests do not substitute for the outstanding production recheck.
+Vercel Production deployment `DuUKvsydRsEEEiunNazFpHKCcwtg` reached Ready on 2026-11-20 at 13:58:29 +08:00 from exact source commit `16aa2fe04266541db1c3ffcb4b1c404a2628c7d9` on `codex/13-14-15`. The formal app domain served that deployment. On the owner UI, the test document loaded with the existing discussions; a new `S4 remote Production heartbeat callback smoke 16aa2fe` discussion was persisted. An independent anonymous viewer listener subscribed with its own document ticket and current-token callback. After the natural heartbeat window elapsed at about 34 seconds, the owner posted `S4 remote Production post-heartbeat delivery 16aa2fe`; the listener received the private Broadcast at about 46 seconds and its protected read returned `200` with seven threads. This verifies event delivery after the heartbeat without relying on the five-second reconciliation read.
+
+The owner then revoked the temporary viewer link. The owner UI showed that the link was disabled. The listener's next protected read returned `403`, and its subscribed channel reported `CLOSED` in the same ten-second polling interval. Reloading the owner page retained all seven discussions, including the post-heartbeat entry, and showed both document sync and discussion Realtime connected. The temporary viewer capability remains revoked.
+
+![Production owner page after reload, with seven persisted discussions and Realtime connected](images/s4-remote-owner-2026-11-20.png)
+
+![Production share settings after the temporary viewer link was revoked](images/s4-remote-share-revoked-2026-11-20.png)
+
+The earlier hosted owner smoke on 2026-11-18 also verified stable self-mention identity and resolve/reopen on the formal UI. The exact heartbeat-fix deployment has now passed hosted persistence, post-heartbeat Broadcast, and revocation checks; #13/#14 no longer have a pending Production recheck.

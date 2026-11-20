@@ -26,6 +26,6 @@ S4_PRODUCTION=1 S4_LOAD=1 pnpm exec playwright test --config playwright.s4-comme
 
 The load uses five independent authenticated contexts, 300 nodes, 100 connections and 100 strokes for five minutes. Canvas actions use the formal UI. Each context submits one comment per ten seconds through its authenticated public HTTP interface and checks the next session's protected read. This isolates persistence/authorization latency; the separate browser journey verifies notification-driven UI rendering. Do not describe the load's read latency as measured Broadcast-to-UI latency.
 
-## Release limitations
+## Release evidence and limitations
 
-Apply migrations 202611170001–202611170004 to the target project and configure its server-only `SUPABASE_JWT_SECRET` before deploying. No hosted deployment, target Realtime/JWT configuration or hosted smoke has been verified in this slice. The pre-existing unrelated change in `app/documents/page.tsx` still makes full-repo lint report an unreachable return; it is excluded from task changes. #14 owns missed-notification recovery and the full revocation flow. This evidence does not claim hosted readiness or the entirety of AC-15/AC-19.
+The migration bundle, server-only Production `SUPABASE_JWT_SECRET`, Ready deployment, and hosted persistence/mention/resolve/reopen smoke are recorded in [S4 remote verification](s4-remote.md). The later heartbeat correction and post-heartbeat Broadcast/revocation recheck on exact Production commit `16aa2fe` are also recorded there. The pre-existing unrelated change in `app/documents/page.tsx` still makes full-repo lint report an unreachable return; it is excluded from task changes. This issue covers its S4 portion of AC-15; it does not claim the entirety of AC-15/AC-19.
