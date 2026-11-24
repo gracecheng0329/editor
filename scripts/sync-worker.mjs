@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -7,6 +8,28 @@ import { build } from 'esbuild'
 import { Miniflare } from 'miniflare'
 
 if (!process.env.SYNC_TEST_SECRET) throw new Error('SYNC_TEST_SECRET is required')
+if (!/^[0-9a-f]{64,}$/.test(process.env.SYNC_TEST_SECRET))
+   throw new Error('SYNC_TEST_SECRET must be at least 32 random bytes encoded as hex')
+const keySeed = spawnSync(
+   'container',
+   [
+      'exec',
+      '--interactive',
+      'editor-supabase-db',
+      'psql',
+      '-U',
+      'postgres',
+      '-d',
+      'postgres',
+      '-v',
+      'ON_ERROR_STOP=1',
+   ],
+   {
+      input: `insert into private.document_version_signing_keys(key_id,secret) values ('local','${process.env.SYNC_TEST_SECRET}') on conflict (key_id) do update set secret=excluded.secret;`,
+      encoding: 'utf8',
+   },
+)
+if (keySeed.status !== 0) throw new Error('Could not seed local version signing key')
 const bundle = await build({
    entryPoints: ['sync/worker.ts'],
    bundle: true,
@@ -25,6 +48,8 @@ const options = {
    port: 8789,
    bindings: {
       ROOM_SIGNING_SECRET: process.env.SYNC_TEST_SECRET,
+      VERSION_SIGNING_KEY_ID: 'local',
+      VERSION_SIGNING_SECRET: process.env.SYNC_TEST_SECRET,
       TEST_CONTROL_SECRET: process.env.SYNC_TEST_SECRET,
       SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'http://127.0.0.1:54321',
       SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,

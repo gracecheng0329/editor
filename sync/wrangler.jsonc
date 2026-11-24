@@ -7,7 +7,9 @@
    "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CanvasRoom"] }],
    "vars": {
       "APP_ORIGIN": "https://editor-gracecheng0329s-projects.vercel.app",
-      "SUPABASE_URL": "https://gnmaayjhlnrlqcpxkjjw.supabase.co"
+      "SUPABASE_URL": "https://gnmaayjhlnrlqcpxkjjw.supabase.co",
+      "VERSION_SIGNING_KEY_ID": "production"
    },
+   "secrets": { "required": ["VERSION_SIGNING_SECRET"] },
    "observability": { "enabled": false }
 }

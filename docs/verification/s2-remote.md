@@ -126,3 +126,35 @@ instance ID 為 DO constructor 產生的非持久隨機 ID，只有經原有身�
 - 遠端自動化測試的兩個獨立 OAuth storage states 仍未完成。首次 owner 隔離登入因 GitHub／Google 流程超過原十分鐘等待而中止，尚未保存 session；capture 工具已延長等待至一小時並重新開啟。
 - 本機前端／遠端服務替代環境曾依使用者選擇準備：獨立 `editor-canvas-acceptance` Worker（初始 version `9a47df95-3fa4-4731-8878-961b5fa14016`）、獨立 secrets、精確的 `http://127.0.0.1:3103/auth/callback` 已獲使用者確認並加入。該替代環境未完成雙帳號測試；本機前端已停止，後續改回正式遠端前端驗收。
 - `prepare`／`verify` 已補強為由 owner 建立節點、editor 改名及移動並建立另一節點，兩人均確認保存、同一公開 checkpoint 一致後才建立基準；重啟後驗證兩個原身分皆還原相同 records 與刪除結果。這些目前是**已備妥但未執行的驗收測試**。
+
+## #16 歷史版本 Postgres 索引 smoke（2026-11-23）
+
+`private.document_versions` 保存完整 snapshot JSON、schema、SDK 版本、revision、generation 及里程碑 metadata。DO 仍是畫布同步的權威來源；建立里程碑時先由 DO 捕獲，再由 Worker 以 HMAC 簽章寫入 Postgres。Postgres 僅在資料庫核對使用者 session、owner/editor 權限及簽章後接受寫入。API 成功回應以 Postgres 寫入為準；同一操作 ID 重送會回傳既有版本。清單與詳細預覽讀 Postgres。`private.document_version_signing_keys` 的 `local`、`acceptance`、`production` key 分開設定，不能把 key 放進 Wrangler vars 或前端環境變數。
+
+遠端 acceptance smoke 使用獨立的 `editor-canvas-acceptance` Worker、Supabase 測試專案及已保存的 owner storage state：
+
+```sh
+set -a
+source .s2-remote/local-frontend.env
+set +a
+S2_REMOTE_MODE=versions pnpm exec playwright test --config playwright.s2-remote.config.ts
+```
+
+結果：Worker deployment `8ba0aa57-830a-4e26-bac7-98576ab19d60`；正式遠端 versions smoke **通過**，涵蓋簽章寫入、同 ID 重送、Worker 清單／詳細讀回、Postgres 直接讀回及偽造簽章拒絕。私有結果在 `.s2-remote/version-index-smoke.json`。測試文件保留供人工檢查。Supabase security advisor 不再把版本 RPC 列為 exposed `SECURITY DEFINER`；內部 definer 函式放在未暴露的 `private` schema。Advisor 仍回報既有 comment RPC 及 private tables 的 findings，未在此票改動。
+
+## 正式 Worker 發布檢查
+
+`wrangler deploy --dry-run --config sync/wrangler.jsonc` 驗證 production bundle 與既有 `ROOMS` SQLite binding（509.66 KiB，gzip 100.11 KiB）。經核准後，已在同一 Supabase 專案配置獨立 `production` signing key，並將程式發布到 Cloudflare production `editor-canvas`。目前 active version 為 `c42a28ae-a0f8-469f-acdc-4ab15e3bdbf8`；發布前版本為 `c09b05e2-3413-4fab-a3ed-8b63c2ae9b64`。若新 Worker 有問題，可用 `wrangler rollback c09b05e2-3413-4fab-a3ed-8b63c2ae9b64 --name editor-canvas` 回復程式版本；這不會回復 Postgres migration／key，也不會刪除 smoke 測試文件。[Cloudflare rollback 說明](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)。
+
+正式版本寫入 smoke 可重用同一測試，讓本機前端只負責取得已登入 owner 的 session，Worker 請求則帶正式 App Origin：
+
+```sh
+set -a
+source .s2-remote/local-frontend.env
+set +a
+S2_WORKER_ORIGIN=https://editor-canvas.yurisine7.workers.dev \
+S2_WORKER_ALLOWED_ORIGIN=https://editor-gracecheng0329s-projects.vercel.app \
+S2_REMOTE_MODE=versions pnpm exec playwright test --config playwright.s2-remote.config.ts
+```
+
+結果：正式 Cloudflare versions smoke **通過**（2026-11-23）。涵蓋 DO 權威快照簽章寫入、同 ID 重送、production Worker 清單／詳細讀取、Supabase Postgres 直接讀回及偽造簽章拒絕。測試由本機前端取得已登入 owner session，Worker 請求使用 production App Origin；因此它驗收正式 Worker API，不代表 Vercel 前端也已部署本機 UI 改動。測試建立的文件與版本保留在 Supabase 專案；私有結果 `.s2-remote/version-index-smoke.json` 記錄文件／版本 ID 與 production Worker origin。Supabase 驗證確認 production key 已就緒、public RPC 為 invoker wrapper、版本 RPC 沒有新增 exposed `SECURITY DEFINER` advisor finding；其他 advisor findings 來自既有 comment RPC／private table 政策。
