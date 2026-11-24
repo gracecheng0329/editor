@@ -21,7 +21,8 @@ if (localFrontend && origin.origin !== 'http://127.0.0.1:3103')
    throw new Error('Local development acceptance uses http://127.0.0.1:3103')
 const mode = process.env.S2_REMOTE_MODE ?? 'smoke'
 if (origin.origin === worker.origin) throw new Error('App and Worker must have separate origins')
-if (!['smoke', 'prepare', 'verify'].includes(mode)) throw new Error('Invalid S2_REMOTE_MODE')
+if (!['smoke', 'prepare', 'verify', 'versions'].includes(mode))
+   throw new Error('Invalid S2_REMOTE_MODE')
 if (!process.env.S2_DEPLOYMENT_COMMIT)
    throw new Error('Set S2_DEPLOYMENT_COMMIT to the deployed app commit')
 

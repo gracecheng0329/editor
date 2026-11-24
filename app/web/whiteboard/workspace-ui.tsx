@@ -82,6 +82,10 @@ type Milestone = {
    name: string
    date: string
    document: ReturnType<typeof getSnapshot>['document']
+   source?: 'cloud' | 'local'
+   createdBy?: string
+   generation?: number
+   revision?: number
 }
 type Panel = 'comments' | 'versions' | null
 type Modal = 'share' | 'help' | null
@@ -205,6 +209,12 @@ export type SyncedWorkspaceProps = {
    collaborators: { id: string; name: string; color: string }[]
    tools: ReactNode
    comments?: ReactNode
+   milestones?: Milestone[]
+   createMilestone?: (name: string) => Promise<void>
+   getMilestone?: (id: string) => Promise<Milestone['document']>
+   milestonePending?: boolean
+   milestoneCanCreate?: boolean
+   milestoneError?: string
 }
 export function SyncedWorkspaceUi(props: SyncedWorkspaceProps) {
    return <WorkspaceChrome remote={props} />
@@ -275,7 +285,7 @@ const WorkspaceChrome = track(function WorkspaceChrome({
    const editor = useEditor()
    const title = local?.title ?? ''
    const threads = local?.threads ?? []
-   const milestones = local?.milestones ?? []
+   const milestones = local?.milestones ?? remote?.milestones ?? []
    const setTitle = local?.setTitle
    const setThreads = local?.setThreads
    const setMilestones = local?.setMilestones
@@ -292,6 +302,8 @@ const WorkspaceChrome = track(function WorkspaceChrome({
    const [activeThread, setActiveThread] = useState<string | null>(null)
    const [milestoneName, setMilestoneName] = useState('')
    const [preview, setPreview] = useState<Milestone | null>(null)
+   const [loadingMilestone, setLoadingMilestone] = useState('')
+   const [milestoneLoadError, setMilestoneLoadError] = useState('')
    const [notice, setNotice] = useState('')
    const [fileMenu, setFileMenu] = useState(false)
    useEffect(() => {
@@ -480,9 +492,19 @@ const WorkspaceChrome = track(function WorkspaceChrome({
       setNotice('已新增本機留言，尚未同步至雲端')
    }
 
-   function saveMilestone() {
-      if (!local) return
+   async function saveMilestone() {
       if (!milestoneName.trim()) return
+      if (remote?.createMilestone) {
+         try {
+            await remote.createMilestone(milestoneName.trim())
+            setMilestoneName('')
+            setNotice('已保存里程碑版本，可隔離預覽')
+         } catch {
+            // The remote workspace reports the service error beside the form.
+         }
+         return
+      }
+      if (!local) return
       const { document } = getSnapshot(editor.store)
       const version: Milestone = {
          id: crypto.randomUUID(),
@@ -872,14 +894,99 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                   <IconButton icon={X} label='關閉側欄' onClick={() => setPanel(null)} />
                </header>
                {remote ? (
-                  <div className='pending-feature'>
-                     <Clock3 size={18} />
-                     <p>
-                        {panel === 'comments'
-                           ? '留言協作尚未交付，將於 S4 提供。目前不會建立本機留言。'
-                           : '版本歷史尚未交付，將於 S5 提供。目前不會建立本機里程碑。'}
-                     </p>
-                  </div>
+                  panel === 'comments' ? (
+                     <div className='pending-feature'>
+                        <Clock3 size={18} />
+                        <p>留言協作尚未交付，將於 S4 提供。目前不會建立本機留言。</p>
+                     </div>
+                  ) : (
+                     <>
+                        <div className='version-intro'>
+                           <span className='version-intro-icon'>
+                              <GitBranch size={23} />
+                           </span>
+                           <h3>為好想法，留個里程碑。</h3>
+                           <p>保存伺服器已確認的畫布，並在隔離畫布中唯讀預覽。</p>
+                        </div>
+                        <form
+                           className='milestone-form'
+                           onSubmit={(event) => {
+                              event.preventDefault()
+                              void saveMilestone()
+                           }}
+                        >
+                           <label htmlFor='milestone-name'>里程碑名稱</label>
+                           <input
+                              id='milestone-name'
+                              placeholder='例如：第一版架構提案'
+                              maxLength={120}
+                              value={milestoneName}
+                              onChange={(event) => setMilestoneName(event.target.value)}
+                           />
+                           <button
+                              type='submit'
+                              className='primary-button'
+                              disabled={
+                                 !milestoneName.trim() ||
+                                 !remote.createMilestone ||
+                                 remote.milestonePending ||
+                                 !remote.milestoneCanCreate
+                              }
+                           >
+                              <Plus size={15} />
+                              建立里程碑
+                           </button>
+                        </form>
+                        <p className='muted' role='status'>
+                           {remote.milestoneCanCreate
+                              ? '目前畫布已確認保存，可建立版本。'
+                              : '待同步修改不會納入版本；請先等保存狀態顯示已確認持久化。'}
+                        </p>
+                        {remote.milestoneError && <p role='alert'>{remote.milestoneError}</p>}
+                        <div className='version-list'>
+                           {milestones.map((milestone) => (
+                              <button
+                                 type='button'
+                                 className='version-item'
+                                 key={milestone.id}
+                                 disabled={loadingMilestone === milestone.id}
+                                 onClick={async () => {
+                                    setMilestoneLoadError('')
+                                    if (milestone.source === 'cloud' && remote.getMilestone) {
+                                       setLoadingMilestone(milestone.id)
+                                       try {
+                                          const document = await remote.getMilestone(milestone.id)
+                                          setPreview({ ...milestone, document })
+                                       } catch (error) {
+                                          setMilestoneLoadError(
+                                             error instanceof Error
+                                                ? error.message
+                                                : '無法預覽此版本',
+                                          )
+                                       } finally {
+                                          setLoadingMilestone('')
+                                       }
+                                    } else setPreview(milestone)
+                                 }}
+                              >
+                                 <span className='version-dot' />
+                                 <span>
+                                    <strong>{milestone.name}</strong>
+                                    <small>
+                                       {new Date(milestone.date).toLocaleString('zh-TW')} · 修訂{' '}
+                                       {milestone.revision ?? '—'}
+                                    </small>
+                                 </span>
+                                 <Eye size={17} />
+                              </button>
+                           ))}
+                           {!milestones.length && (
+                              <p className='muted centered'>尚未建立里程碑版本</p>
+                           )}
+                           {milestoneLoadError && <p role='alert'>{milestoneLoadError}</p>}
+                        </div>
+                     </>
+                  )
                ) : (
                   <>
                      <div className='panel-local-note'>
@@ -1333,7 +1440,9 @@ const WorkspaceChrome = track(function WorkspaceChrome({
             <ModalFrame title={`版本預覽 · ${preview.name}`} onClose={closePreview} wide>
                <div className='preview-note'>
                   <Eye size={14} />
-                  唯讀本機快照 · 不影響目前畫布
+                  {preview.source === 'cloud'
+                     ? '雲端唯讀快照 · 與目前協作房間隔離'
+                     : '唯讀本機快照 · 不影響目前畫布'}
                </div>
                <div className='milestone-preview'>
                   <Tldraw
@@ -1348,7 +1457,11 @@ const WorkspaceChrome = track(function WorkspaceChrome({
                   />
                </div>
                <div className='preview-footer'>
-                  <span>雲端安全還原尚未串接</span>
+                  <span>
+                     {preview.source === 'cloud'
+                        ? `世代 ${preview.generation ?? '—'} · 修訂 ${preview.revision ?? '—'} · 不會改動目前畫布`
+                        : '雲端安全還原尚未串接'}
+                  </span>
                   <button type='button' className='secondary-button' onClick={closePreview}>
                      返回目前畫布
                      <ChevronRight size={15} />

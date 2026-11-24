@@ -9,6 +9,8 @@ interface Env {
    SUPABASE_ANON_KEY: string
    APP_ORIGIN: string
    ROOM_SIGNING_SECRET: string
+   VERSION_SIGNING_KEY_ID: 'local' | 'acceptance' | 'production'
+   VERSION_SIGNING_SECRET: string
    TEST_CONTROL_SECRET?: string
    SESSION_LEASE_MS?: string
 }
@@ -107,7 +109,9 @@ function encode(bytes: Uint8Array) {
       .replaceAll('=', '')
 }
 function allowedOrigins(env: Env) {
-   return env.APP_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
+   return env.APP_ORIGIN.split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean)
 }
 function decode(value: string) {
    return Uint8Array.from(atob(value.replaceAll('-', '+').replaceAll('_', '/')), (char) =>
@@ -122,6 +126,53 @@ async function signingKey(env: Env) {
       false,
       ['sign', 'verify'],
    )
+}
+async function signVersion(payloadText: string, env: Env) {
+   const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(env.VERSION_SIGNING_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+   )
+   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payloadText))
+   return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+async function readVersionIndex(
+   request: Request,
+   access: Access,
+   env: Env,
+   versionId: string | null,
+   cors: HeadersInit,
+) {
+   const token = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+   const shareToken = request.headers.get('X-Share-Token')
+   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/read_document_versions`, {
+      method: 'POST',
+      headers: {
+         apikey: env.SUPABASE_ANON_KEY,
+         Authorization: `Bearer ${token ?? env.SUPABASE_ANON_KEY}`,
+         'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+         target_doc: access.documentId,
+         version_id: versionId,
+         share_token: shareToken,
+      }),
+   })
+   if (response.status === 404)
+      return Response.json({ error: 'VERSION_NOT_FOUND' }, { status: 404, headers: cors })
+   if (!response.ok)
+      return Response.json({ error: 'VERSION_INDEX_UNAVAILABLE' }, { status: 503, headers: cors })
+   const value = (await response.json()) as Record<string, unknown>
+   if (value.error === 'VERSION_NOT_FOUND')
+      return Response.json(value, { status: 404, headers: cors })
+   if (versionId && value.sdkVersion !== '5.5.2')
+      return Response.json(
+         { error: 'SNAPSHOT_INCOMPATIBLE', supportedSdkVersion: '5.5.2' },
+         { status: 409, headers: cors },
+      )
+   return Response.json(value, { headers: cors })
 }
 async function issueTicket(access: Access, env: Env) {
    const payload = encode(new TextEncoder().encode(JSON.stringify(access)))
@@ -217,7 +268,9 @@ const worker = {
          )
          return env.ROOMS.get(env.ROOMS.idFromName(access.roomId)).fetch(internal)
       }
-      const match = /^\/documents\/([0-9a-f-]{36})(?:\/(checkpoint|session))?$/.exec(url.pathname)
+      const match = /^\/documents\/([0-9a-f-]{36})(?:\/(checkpoint|session|versions))?$/.exec(
+         url.pathname,
+      )
       const origins = allowedOrigins(env)
       const origin = request.headers.get('Origin')
       // A browser address-bar visit to the session API is a document navigation, not an API call.
@@ -238,7 +291,7 @@ const worker = {
       if (request.method === 'OPTIONS')
          return new Response(null, {
             status: 204,
-         headers: {
+            headers: {
                ...cors,
                'Access-Control-Allow-Methods': 'GET, POST',
                'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Share-Token',
@@ -266,6 +319,103 @@ const worker = {
                },
                { headers: cors },
             )
+         }
+         if (match[2] === 'versions') {
+            if (request.method !== 'GET' && request.method !== 'POST')
+               return new Response('Method not allowed', { status: 405, headers: cors })
+            if (request.method === 'POST' && access.role === 'viewer')
+               return Response.json({ error: 'FORBIDDEN' }, { status: 403, headers: cors })
+            if (request.method === 'GET') {
+               const versionId = url.searchParams.get('id')
+               if (versionId && !/^[0-9a-f-]{36}$/.test(versionId))
+                  return Response.json(
+                     { error: 'VERSION_NOT_FOUND' },
+                     { status: 404, headers: cors },
+                  )
+               return readVersionIndex(request, access, env, versionId, cors)
+            }
+            const session = await currentSession(access, env)
+            if (session instanceof Response)
+               return new Response(session.body, { status: session.status, headers: cors })
+            access = { ...access, generation: session.generation }
+            const internal = new Request(`http://canvas.internal/documents/${match[1]}/versions`, {
+               method: 'POST',
+               headers: {
+                  'X-Canvas-Access': JSON.stringify(access),
+                  'Content-Type': 'application/json',
+               },
+               body: await request.text(),
+            })
+            const room = env.ROOMS.get(env.ROOMS.idFromName(access.roomId))
+            const response = await room.fetch(internal)
+            if (!response.ok)
+               return new Response(response.body, {
+                  status: response.status,
+                  headers: { ...cors, 'Content-Type': 'application/json' },
+               })
+            let version = (await response.json()) as Record<string, unknown>
+            if (version.duplicate) {
+               const detail = await room.fetch(
+                  new Request(
+                     `http://canvas.internal/documents/${match[1]}/versions?id=${version.id}`,
+                     {
+                        headers: { 'X-Canvas-Access': JSON.stringify(access) },
+                     },
+                  ),
+               )
+               if (!detail.ok)
+                  return new Response(detail.body, {
+                     status: detail.status,
+                     headers: { ...cors, 'Content-Type': 'application/json' },
+                  })
+               version = (await detail.json()) as Record<string, unknown>
+            }
+            const snapshot = version.snapshot as Record<string, unknown> | undefined
+            const payload = {
+               id: version.id,
+               documentId: version.documentId,
+               kind: version.kind,
+               name: version.name,
+               createdBy: version.createdBy,
+               createdAt: version.createdAt,
+               schema: version.schema ?? snapshot?.schema,
+               sdkVersion: version.sdkVersion,
+               generation: version.generation,
+               revision: version.revision,
+               snapshot,
+            }
+            const payloadText = JSON.stringify(payload)
+            const token = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+            const stored = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/store_document_version`, {
+               method: 'POST',
+               headers: {
+                  apikey: env.SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+               },
+               body: JSON.stringify({
+                  target_key_id: env.VERSION_SIGNING_KEY_ID,
+                  payload_text: payloadText,
+                  signature_hex: await signVersion(payloadText, env),
+               }),
+            })
+            if (!stored.ok) {
+               const error = (await stored.json().catch(() => null)) as { message?: string } | null
+               if (error?.message === 'VERSION_OPERATION_CONFLICT')
+                  return Response.json(
+                     { error: 'OPERATION_CONFLICT' },
+                     { status: 409, headers: cors },
+                  )
+               return Response.json(
+                  { error: 'VERSION_INDEX_UNAVAILABLE' },
+                  { status: 503, headers: cors },
+               )
+            }
+            const persisted = (await stored.json()) as Record<string, unknown>
+            return Response.json(persisted, {
+               status: persisted.duplicate ? 200 : 201,
+               headers: cors,
+            })
          }
          if (match[2] === 'checkpoint' && request.method === 'POST') {
             const session = await currentSession(access, env)
@@ -305,6 +455,12 @@ export class CanvasRoom extends DurableObject<Env> {
       ctx.storage.sql.exec(
          'CREATE TABLE IF NOT EXISTS canvas_state (id INTEGER PRIMARY KEY CHECK(id = 1), generation INTEGER NOT NULL)',
       )
+      ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS canvas_versions (
+         id TEXT PRIMARY KEY, document_id TEXT NOT NULL, kind TEXT NOT NULL,
+         name TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL,
+         schema_json TEXT NOT NULL, sdk_version TEXT NOT NULL, generation INTEGER NOT NULL,
+         revision INTEGER NOT NULL, snapshot_json TEXT NOT NULL
+      )`)
       ctx.storage.sql.exec('INSERT OR IGNORE INTO canvas_state (id, generation) VALUES (1, 0)')
       this.room = new TLSocketRoom({ storage: this.sqlite, schema: canvasSchema })
    }
@@ -336,11 +492,139 @@ export class CanvasRoom extends DurableObject<Env> {
          return Response.json({ generation }, { headers: noStore })
       }
       if (access.generation !== generation)
-         return Response.json({ code: 'GENERATION_MISMATCH', generation }, { status: 409 })
+         return Response.json(
+            { code: 'GENERATION_MISMATCH', generation },
+            { status: 409, headers: noStore },
+         )
+      if (url.pathname.endsWith('/versions')) {
+         if (request.method === 'GET') {
+            const versionId = url.searchParams.get('id')
+            if (versionId) {
+               const version = this.ctx.storage.sql
+                  .exec<{ metadata: string; snapshot_json: string }>(
+                     `SELECT json_object('id', id, 'documentId', document_id, 'kind', kind,
+                     'name', name, 'createdBy', created_by, 'createdAt', created_at,
+                     'sdkVersion', sdk_version, 'generation', generation, 'revision', revision) AS metadata,
+                     snapshot_json FROM canvas_versions WHERE id = ? AND document_id = ?`,
+                     versionId,
+                     access.documentId,
+                  )
+                  .toArray()[0]
+               if (!version)
+                  return Response.json(
+                     { error: 'VERSION_NOT_FOUND' },
+                     { status: 404, headers: noStore },
+                  )
+               if (JSON.parse(version.metadata).sdkVersion !== '5.5.2')
+                  return Response.json(
+                     { error: 'SNAPSHOT_INCOMPATIBLE', supportedSdkVersion: '5.5.2' },
+                     { status: 409, headers: noStore },
+                  )
+               return Response.json(
+                  { ...JSON.parse(version.metadata), snapshot: JSON.parse(version.snapshot_json) },
+                  { headers: noStore },
+               )
+            }
+            const rows = this.ctx.storage.sql
+               .exec<{
+                  id: string
+                  document_id: string
+                  kind: string
+                  name: string
+                  created_by: string
+                  created_at: string
+                  sdk_version: string
+                  generation: number
+                  revision: number
+               }>(
+                  'SELECT id, document_id, kind, name, created_by, created_at, sdk_version, generation, revision FROM canvas_versions WHERE document_id = ? ORDER BY created_at DESC',
+                  access.documentId,
+               )
+               .toArray()
+            return Response.json({ versions: rows }, { headers: noStore })
+         }
+         if (request.method !== 'POST')
+            return new Response('Method not allowed', { status: 405, headers: noStore })
+         if (access.role === 'viewer')
+            return Response.json({ error: 'FORBIDDEN' }, { status: 403, headers: noStore })
+         const input = (await request.json().catch(() => null)) as {
+            name?: unknown
+            operationId?: unknown
+            [key: string]: unknown
+         } | null
+         const name = typeof input?.name === 'string' ? input.name.trim() : ''
+         if (
+            !name ||
+            name.length > 120 ||
+            typeof input?.operationId !== 'string' ||
+            !/^[0-9a-f-]{36}$/.test(input.operationId) ||
+            Object.keys(input ?? {}).some((key) => !['name', 'operationId'].includes(key))
+         )
+            return Response.json({ error: 'VALIDATION_FAILED' }, { status: 422, headers: noStore })
+         const found = this.ctx.storage.sql
+            .exec<{ id: string; document_id: string; name: string }>(
+               'SELECT id, document_id, name FROM canvas_versions WHERE id = ?',
+               input.operationId,
+            )
+            .toArray()[0]
+         if (found) {
+            if (found.name !== name || found.document_id !== access.documentId)
+               return Response.json(
+                  { error: 'OPERATION_CONFLICT' },
+                  { status: 409, headers: noStore },
+               )
+            await this.ctx.storage.sync()
+            return Response.json({ id: found.id, duplicate: true }, { headers: noStore })
+         }
+         const count = this.ctx.storage.sql
+            .exec<{ count: number }>(
+               "SELECT COUNT(*) AS count FROM canvas_versions WHERE document_id = ? AND kind = 'milestone'",
+               access.documentId,
+            )
+            .one().count
+         if (count >= 50)
+            return Response.json({ error: 'VERSION_LIMIT' }, { status: 409, headers: noStore })
+         const captured = this.sqlite.getSnapshot()
+         const snapshot = {
+            store: Object.fromEntries(captured.documents.map(({ state }) => [state.id, state])),
+            schema: captured.schema,
+         }
+         const createdAt = new Date().toISOString()
+         this.ctx.storage.sql.exec(
+            'INSERT INTO canvas_versions (id, document_id, kind, name, created_by, created_at, schema_json, sdk_version, generation, revision, snapshot_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            input.operationId,
+            access.documentId,
+            'milestone',
+            name,
+            access.userId,
+            createdAt,
+            JSON.stringify(captured.schema),
+            '5.5.2',
+            generation,
+            captured.documentClock ?? 0,
+            JSON.stringify(snapshot),
+         )
+         await this.ctx.storage.sync()
+         return Response.json(
+            {
+               id: input.operationId,
+               documentId: access.documentId,
+               kind: 'milestone',
+               name,
+               createdBy: access.userId,
+               createdAt,
+               schema: captured.schema,
+               sdkVersion: '5.5.2',
+               generation,
+               revision: captured.documentClock ?? 0,
+               snapshot,
+            },
+            { status: 201, headers: noStore },
+         )
+      }
       if (url.pathname.endsWith('/checkpoint')) {
          if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
-         if (access.role === 'viewer')
-            return Response.json({ error: 'READ_ONLY' }, { status: 403 })
+         if (access.role === 'viewer') return Response.json({ error: 'READ_ONLY' }, { status: 403 })
          // Capture authoritative accepted records before waiting for physical durability.
          // A later local edit cannot be covered by this earlier checkpoint.
          const captured = this.sqlite.getSnapshot()

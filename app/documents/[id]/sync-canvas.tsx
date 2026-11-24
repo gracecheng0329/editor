@@ -1,6 +1,14 @@
 'use client'
 import { useSync } from '@tldraw/sync'
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+   type MutableRefObject,
+   type ReactNode,
+   useCallback,
+   useEffect,
+   useMemo,
+   useRef,
+   useState,
+} from 'react'
 import {
    atom,
    createUserId,
@@ -8,8 +16,8 @@ import {
    type Editor,
    isEqual,
    type SerializedStore,
-   type TLRecord,
    type TLDrawShape,
+   type TLRecord,
    type TLStoreSnapshot,
    Tldraw,
    useEditor,
@@ -20,6 +28,7 @@ import {
    architectureShapeUtils,
 } from '@/app/web/whiteboard/architecture-shape'
 import 'tldraw/tldraw.css'
+import { ModalFrame } from '@/app/web/whiteboard/workspace-surfaces'
 import { SyncedWorkspaceUi, WorkspaceUnavailable } from '@/app/web/whiteboard/workspace-ui'
 import { syncedBindingUtils } from './arrow-binding'
 import { DocumentComments } from './comments'
@@ -44,6 +53,18 @@ type Checkpoint = {
    revision: number
    snapshot: { store: SerializedStore<TLRecord> }
 }
+type MilestoneResponse = {
+   id: string
+   documentId: string
+   kind: 'milestone'
+   name: string
+   createdBy: string
+   createdAt: string
+   sdkVersion: string
+   generation: number
+   revision: number
+   snapshot: { store: SerializedStore<TLRecord>; schema: unknown }
+}
 type RetainedContent = {
    documentId: string
    reason: 'access' | 'generation'
@@ -58,6 +79,8 @@ function CanvasControls({
    confirm,
    onConfirmed,
    workspace,
+   roomURL,
+   accessToken,
 }: {
    documentId: string
    shareToken: string
@@ -65,6 +88,8 @@ function CanvasControls({
    connectionStatus: string
    confirm: (signal: AbortSignal) => Promise<Checkpoint>
    onConfirmed: (store: SerializedStore<TLRecord>) => void
+   roomURL: string
+   accessToken: MutableRefObject<string>
 }) {
    const editor = useEditor()
    const canvasRecords = useValue('canvas document', () => editor.store.serialize('document'), [
@@ -97,6 +122,10 @@ function CanvasControls({
    const [checkpoint, setCheckpoint] = useState<Checkpoint | null>(null)
    const [error, setError] = useState(false)
    const [retry, setRetry] = useState(0)
+   const [milestones, setMilestones] = useState<MilestoneResponse[]>([])
+   const [milestoneError, setMilestoneError] = useState('')
+   const [milestonePending, setMilestonePending] = useState(false)
+   const milestoneOperationIds = useRef(new Map<string, string>())
    const confirmed = checkpoint !== null && isEqual(canvasRecords, checkpoint.snapshot.store)
    // biome-ignore lint/correctness/useExhaustiveDependencies: Each document edit or retry must cancel stale checkpoint requests and restart confirmation.
    useEffect(() => {
@@ -124,6 +153,122 @@ function CanvasControls({
    useEffect(() => {
       if (confirmed && checkpoint) onConfirmed(checkpoint.snapshot.store)
    }, [confirmed, checkpoint, onConfirmed])
+   const refreshMilestones = useCallback(
+      async (signal?: AbortSignal) => {
+         if (!accessToken.current) return
+         const response = await fetch(`${roomURL}/versions`, {
+            headers: { Authorization: `Bearer ${accessToken.current}` },
+            cache: 'no-store',
+            signal,
+         })
+         if (!response.ok) throw new Error('無法載入歷史版本')
+         const result = (await response.json()) as {
+            versions?: Array<
+               Omit<MilestoneResponse, 'snapshot'> & {
+                  document_id?: string
+                  created_at?: string
+                  created_by?: string
+               }
+            >
+         }
+         setMilestones(
+            (result.versions ?? []).map((version) => ({
+               ...version,
+               documentId: version.documentId ?? version.document_id ?? documentId,
+               createdAt: version.createdAt ?? version.created_at ?? '',
+               createdBy: version.createdBy ?? version.created_by ?? '',
+               snapshot: { store: {} as SerializedStore<TLRecord>, schema: null },
+            })),
+         )
+         setMilestoneError('')
+      },
+      [accessToken, documentId, roomURL],
+   )
+   useEffect(() => {
+      if (connectionStatus !== 'online') return
+      const controller = new AbortController()
+      void refreshMilestones(controller.signal).catch((error: unknown) => {
+         if (!controller.signal.aborted)
+            setMilestoneError(error instanceof Error ? error.message : '無法載入歷史版本')
+      })
+      return () => controller.abort()
+   }, [connectionStatus, refreshMilestones])
+   const createMilestone = useCallback(
+      async (name: string) => {
+         if (!confirmed) throw new Error('畫布尚未確認保存')
+         const operationId = milestoneOperationIds.current.get(name) ?? crypto.randomUUID()
+         milestoneOperationIds.current.set(name, operationId)
+         setMilestonePending(true)
+         setMilestoneError('')
+         try {
+            const response = await fetch(`${roomURL}/versions`, {
+               method: 'POST',
+               headers: {
+                  Authorization: `Bearer ${accessToken.current}`,
+                  'Content-Type': 'application/json',
+               },
+               cache: 'no-store',
+               body: JSON.stringify({ name, operationId }),
+            })
+            if (response.status === 409) {
+               const failure = (await response.json().catch(() => null)) as {
+                  error?: string
+                  code?: string
+               } | null
+               if (failure?.error === 'VERSION_LIMIT')
+                  throw new Error('里程碑版本已達 50 個上限，請先清理版本。')
+               if (failure?.error === 'OPERATION_CONFLICT')
+                  throw new Error('版本請求與已保存操作衝突，請重新嘗試。')
+               if (failure?.code === 'GENERATION_MISMATCH')
+                  throw new Error('畫布世代已變更，請重新開啟文件後再建立版本。')
+               throw new Error('版本服務拒絕此操作，請重新整理文件後重試。')
+            }
+            if (!response.ok) throw new Error('版本保存失敗，請重試。')
+            const saved = (await response.json()) as MilestoneResponse
+            milestoneOperationIds.current.delete(name)
+            setMilestones((current) => [
+               { ...saved, snapshot: { store: {} as SerializedStore<TLRecord>, schema: null } },
+               ...current.filter((version) => version.id !== saved.id),
+            ])
+         } catch (error) {
+            const message = error instanceof Error ? error.message : '版本保存失敗，請重試。'
+            setMilestoneError(message)
+            throw error
+         } finally {
+            setMilestonePending(false)
+         }
+      },
+      [accessToken, confirmed, roomURL],
+   )
+   const getMilestone = useCallback(
+      async (id: string) => {
+         const response = await fetch(`${roomURL}/versions?id=${encodeURIComponent(id)}`, {
+            headers: { Authorization: `Bearer ${accessToken.current}` },
+            cache: 'no-store',
+         })
+         if (response.status === 409) {
+            const failure = (await response.json().catch(() => null)) as {
+               error?: string
+               code?: string
+            } | null
+            throw new Error(
+               failure?.error === 'SNAPSHOT_INCOMPATIBLE'
+                  ? '此版本使用不相容的畫布 schema，無法預覽。'
+                  : '畫布世代已變更，請重新載入文件後重試。',
+            )
+         }
+         if (response.status === 404 || response.status === 410)
+            throw new Error('此版本已清理或不存在，請重新整理版本清單。')
+         if (!response.ok) throw new Error('無法載入歷史版本，請重試。')
+         const version = (await response.json()) as MilestoneResponse
+         if (version.documentId !== documentId || version.sdkVersion !== '5.5.2')
+            throw new Error('此版本與目前畫布不相容，無法預覽。')
+         return { store: version.snapshot.store, schema: version.snapshot.schema } as ReturnType<
+            typeof import('tldraw').getSnapshot
+         >['document']
+      },
+      [accessToken, documentId, roomURL],
+   )
    return (
       <SyncedWorkspaceUi
          isSharing={workspace.isSharing}
@@ -136,6 +281,24 @@ function CanvasControls({
             color: peer.color,
          }))}
          comments={<DocumentComments documentId={documentId} shareToken={shareToken} />}
+         milestones={milestones.map((version) => ({
+            id: version.id,
+            name: version.name,
+            date: version.createdAt,
+            source: 'cloud' as const,
+            createdBy: version.createdBy,
+            generation: version.generation,
+            revision: version.revision,
+            document: {
+               store: version.snapshot.store,
+               schema: version.snapshot.schema,
+            } as ReturnType<typeof import('tldraw').getSnapshot>['document'],
+         }))}
+         createMilestone={createMilestone}
+         getMilestone={getMilestone}
+         milestonePending={milestonePending}
+         milestoneCanCreate={confirmed}
+         milestoneError={milestoneError}
          status={
             <>
                <output aria-label='同步狀態'>
@@ -270,20 +433,16 @@ function ReadonlyCanvas({ readOnly }: { readOnly: boolean }) {
    return null
 }
 
-function AccessDenied({
-   title,
-   viewer,
-}: {
-   title: string
-   viewer: boolean
-}) {
+function AccessDenied({ title, viewer }: { title: string; viewer: boolean }) {
    return (
       <section className='whiteboard-app document-workspace' aria-label='畫布存取已撤銷'>
          <div className='workspace-ui'>
             <header className='document-bar floating-surface'>
                <a className='brand' href={viewer ? '/share' : '/documents'}>
                   <span className='brand-mark'>a</span>
-                  <span className='brand-word'>archly<span>✳</span></span>
+                  <span className='brand-word'>
+                     archly<span>✳</span>
+                  </span>
                </a>
                <span className='divider' />
                <h1>{title}</h1>
@@ -300,6 +459,45 @@ function AccessDenied({
             </section>
          </div>
       </section>
+   )
+}
+
+function VersionPreviewModal({
+   version,
+   onClose,
+}: {
+   version: MilestoneResponse
+   onClose: () => void
+}) {
+   return (
+      <ModalFrame title={`版本預覽 · ${version.name}`} onClose={onClose} wide>
+         <div className='preview-note'>唯讀歷史畫布 · 與目前協作房間隔離</div>
+         <div className='milestone-preview'>
+            <Tldraw
+               hideUi
+               shapeUtils={shapeUtils}
+               bindingUtils={syncedBindingUtils}
+               snapshot={
+                  { store: version.snapshot.store, schema: version.snapshot.schema } as ReturnType<
+                     typeof import('tldraw').getSnapshot
+                  >['document']
+               }
+               onMount={(editor) => {
+                  editor.updateInstanceState({ isReadonly: true })
+                  const bounds = editor.getCurrentPageBounds()
+                  if (bounds) editor.zoomToBounds(bounds, { inset: 60 })
+               }}
+            />
+         </div>
+         <div className='preview-footer'>
+            <span>
+               世代 {version.generation} · 修訂 {version.revision}
+            </span>
+            <button type='button' className='secondary-button' onClick={onClose}>
+               返回目前畫布
+            </button>
+         </div>
+      </ModalFrame>
    )
 }
 
@@ -321,14 +519,18 @@ function SyncUnavailable({
                <header className='document-bar floating-surface'>
                   <a className='brand' href='/documents'>
                      <span className='brand-mark'>a</span>
-                     <span className='brand-word'>archly<span>✳</span></span>
+                     <span className='brand-word'>
+                        archly<span>✳</span>
+                     </span>
                   </a>
                   <span className='divider' />
                   <h1>{title}</h1>
                </header>
                <section className='sync-access-status floating-surface'>
                   <p role='status'>同步連線失敗，請再試一次。</p>
-                  <button type='button' onClick={onRetry}>重新連線</button>
+                  <button type='button' onClick={onRetry}>
+                     重新連線
+                  </button>
                </section>
             </div>
          </section>
@@ -336,7 +538,9 @@ function SyncUnavailable({
    return (
       <WorkspaceUnavailable {...workspace}>
          <p role='status'>同步連線失敗，請重試。</p>
-         <button type='button' onClick={onRetry}>重新連線</button>
+         <button type='button' onClick={onRetry}>
+            重新連線
+         </button>
       </WorkspaceUnavailable>
    )
 }
@@ -467,8 +671,7 @@ function ConnectedCanvas({
          if ([401, 403, 404].includes(response.status)) {
             if (pauseForRetainedChanges('access', generation.current)) return pause()
          }
-         if (shareToken && [401, 403, 404].includes(response.status))
-            return issueShareTicket()
+         if (shareToken && [401, 403, 404].includes(response.status)) return issueShareTicket()
          if ([401, 403, 404].includes(response.status)) setAccessDenied(true)
          throw new Error('無法取得文件存取資格')
       }
@@ -483,8 +686,7 @@ function ConnectedCanvas({
          if ([401, 403, 404].includes(issued.status)) {
             if (pauseForRetainedChanges('access', generation.current)) return pause()
          }
-         if (shareToken && [401, 403, 404].includes(issued.status))
-            return issueShareTicket()
+         if (shareToken && [401, 403, 404].includes(issued.status)) return issueShareTicket()
          if ([401, 403, 404].includes(issued.status)) setAccessDenied(true)
          throw new Error('無法取得畫布連線資格')
       }
@@ -509,12 +711,18 @@ function ConnectedCanvas({
       return store.status === 'error' ? (
          <SyncUnavailable workspace={workspace} title={title} viewer={readOnly} onRetry={onRetry} />
       ) : (
-         <section className='whiteboard-app document-workspace' aria-label={viewer ? '分享畫布' : '文件畫布'}>
+         <section
+            className='whiteboard-app document-workspace'
+            aria-label={viewer ? '分享畫布' : '文件畫布'}
+         >
             <p role='status'>正在連接同步服務…</p>
          </section>
       )
    return (
-      <section className='whiteboard-app document-workspace' aria-label={readOnly ? '分享畫布' : '文件畫布'}>
+      <section
+         className='whiteboard-app document-workspace'
+         aria-label={readOnly ? '分享畫布' : '文件畫布'}
+      >
          <Tldraw
             store={store}
             shapeUtils={shapeUtils}
@@ -546,6 +754,8 @@ function ConnectedCanvas({
                      connectionStatus={store.connectionStatus}
                      confirm={confirm}
                      onConfirmed={rememberConfirmed}
+                     roomURL={roomURL}
+                     accessToken={token}
                   />
                )
             )}
@@ -654,12 +864,86 @@ function ViewerCanvasControls({
             .filter((shape): shape is TLDrawShape => shape.type === 'draw'),
       [editor],
    )
+   const [historyOpen, setHistoryOpen] = useState(false)
+   const [versions, setVersions] = useState<Array<Omit<MilestoneResponse, 'snapshot'>>>([])
+   const [selectedVersion, setSelectedVersion] = useState<MilestoneResponse | null>(null)
+   const [historyError, setHistoryError] = useState('')
+   const [loadingVersion, setLoadingVersion] = useState(false)
+   const loadVersions = useCallback(async () => {
+      const response = await fetch(
+         `${process.env.NEXT_PUBLIC_SYNC_URL}/documents/${encodeURIComponent(documentId)}/versions`,
+         {
+            headers: { 'X-Share-Token': shareToken },
+            cache: 'no-store',
+         },
+      )
+      if (!response.ok) throw new Error('無法載入歷史版本')
+      const result = (await response.json()) as { versions?: Array<Record<string, unknown>> }
+      setVersions(
+         (result.versions ?? []).map((item) => ({
+            id: String(item.id),
+            documentId: String(item.document_id ?? item.documentId ?? documentId),
+            kind: 'milestone',
+            name: String(item.name),
+            createdBy: String(item.created_by ?? item.createdBy ?? ''),
+            createdAt: String(item.created_at ?? item.createdAt ?? ''),
+            sdkVersion: String(item.sdk_version ?? item.sdkVersion ?? ''),
+            generation: Number(item.generation),
+            revision: Number(item.revision),
+            snapshot: { store: {} as SerializedStore<TLRecord>, schema: null },
+         })),
+      )
+      setHistoryError('')
+   }, [documentId, shareToken])
+   useEffect(() => {
+      if (!historyOpen) return
+      void loadVersions().catch((error: unknown) =>
+         setHistoryError(error instanceof Error ? error.message : '無法載入歷史版本'),
+      )
+   }, [historyOpen, loadVersions])
+   const previewVersion = async (id: string) => {
+      setLoadingVersion(true)
+      setHistoryError('')
+      try {
+         const response = await fetch(
+            `${process.env.NEXT_PUBLIC_SYNC_URL}/documents/${encodeURIComponent(documentId)}/versions?id=${encodeURIComponent(id)}`,
+            {
+               headers: { 'X-Share-Token': shareToken },
+               cache: 'no-store',
+            },
+         )
+         if (response.status === 409) {
+            const failure = (await response.json().catch(() => null)) as {
+               error?: string
+               code?: string
+            } | null
+            throw new Error(
+               failure?.error === 'SNAPSHOT_INCOMPATIBLE'
+                  ? '此版本使用不相容的畫布 schema，無法預覽。'
+                  : '畫布世代已變更，請重新載入文件後重試。',
+            )
+         }
+         if (response.status === 404 || response.status === 410)
+            throw new Error('此版本已清理或不存在。')
+         if (!response.ok) throw new Error('無法載入歷史版本')
+         const version = (await response.json()) as MilestoneResponse
+         if (version.documentId !== documentId || version.sdkVersion !== '5.5.2')
+            throw new Error('此版本與目前畫布不相容。')
+         setSelectedVersion(version)
+      } catch (error) {
+         setHistoryError(error instanceof Error ? error.message : '無法預覽版本')
+      } finally {
+         setLoadingVersion(false)
+      }
+   }
    return (
       <div className='workspace-ui viewer-workspace'>
          <header className='document-bar floating-surface'>
             <a className='brand' href='/documents' aria-label='回到我的文件'>
                <span className='brand-mark'>a</span>
-               <span className='brand-word'>archly<span>✳</span></span>
+               <span className='brand-word'>
+                  archly<span>✳</span>
+               </span>
             </a>
             <span className='divider' />
             <div className='document-heading'>
@@ -674,7 +958,48 @@ function ViewerCanvasControls({
             <span className='divider' />
             <span>{retained ? '本機內容未送出' : '觀看者・唯讀'}</span>
             <DocumentComments documentId={documentId} shareToken={shareToken} />
+            <button
+               type='button'
+               aria-label='版本歷史'
+               onClick={() => setHistoryOpen((open) => !open)}
+            >
+               版本歷史
+            </button>
          </div>
+         {historyOpen && (
+            <aside className='side-panel floating-surface' aria-label='版本面板'>
+               <header className='panel-header'>
+                  <h2>版本歷史</h2>
+                  <button type='button' aria-label='關閉側欄' onClick={() => setHistoryOpen(false)}>
+                     關閉
+                  </button>
+               </header>
+               {historyError && <p role='alert'>{historyError}</p>}
+               {loadingVersion && <p role='status'>載入版本中…</p>}
+               <div className='version-list'>
+                  {versions.map((version) => (
+                     <button
+                        type='button'
+                        className='version-item'
+                        key={version.id}
+                        onClick={() => void previewVersion(version.id)}
+                     >
+                        <span className='version-dot' />
+                        <span>
+                           <strong>{version.name}</strong>
+                           <small>
+                              {new Date(version.createdAt).toLocaleString('zh-TW')} · 修訂{' '}
+                              {version.revision}
+                           </small>
+                        </span>
+                     </button>
+                  ))}
+                  {!versions.length && !historyError && (
+                     <p className='muted centered'>尚未建立里程碑版本</p>
+                  )}
+               </div>
+            </aside>
+         )}
          {retained && (
             <section
                className='sync-access-status floating-surface retained-changes'
@@ -683,8 +1008,8 @@ function ViewerCanvasControls({
                <p role='alert'>
                   {retained.reason === 'generation'
                      ? '畫布世代已變更。此頁的待同步修改尚未送入目前畫布，已保留在本機。'
-                     : '寫入資格已失效。此頁的待同步修改尚未送入雲端，已保留在本機。'}
-                  {' '}離開頁面前請先下載內容。
+                     : '寫入資格已失效。此頁的待同步修改尚未送入雲端，已保留在本機。'}{' '}
+                  離開頁面前請先下載內容。
                </p>
                <button
                   type='button'
@@ -723,6 +1048,12 @@ function ViewerCanvasControls({
                   </li>
                ))}
             </ul>
+         )}
+         {selectedVersion && (
+            <VersionPreviewModal
+               version={selectedVersion}
+               onClose={() => setSelectedVersion(null)}
+            />
          )}
       </div>
    )
